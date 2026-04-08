@@ -1,35 +1,20 @@
-const Laptop = {
-    brand: 'Apple',
-    model: 'Mac Pro M5',
-    price: 2000,
+const Calculator = {
+    a: 0,
+    b: 0,
 
-    getInfo: function() {
-        return this.brand + ' ' + this.model + ' - $' + this.price;
-    }
-};
+    read: function() {
+        this.a = parseInt(prompt('Enter the number a: '));
+        this.b = parseInt(prompt('Enter the number b: '));
+    },
 
-const Phone = {
-    brand: 'Samsung',
-    model: 'Galaxy',
-    price: 1000,
+    sum: function() {
+        return this.a + this.b;
+    },
+    multiply: function() {
+        return this.a * this.b;
+    },
+}
 
-
-    getInfo: function()  {
-        return this.brand + ' ' + this.model + ' -$' + this.price;
-    }
-};
-
-const Car = {
-    brand: 'Merseder',
-    model: 'Benz',
-    price: 30000,
-
-
-    getInfo: function()  {
-        return this.brand + ' ' + this.model + ' -$' + this.price;
-    }
-};
-
-console.log(Laptop.getInfo());
-console.log(Phone.getInfo());
-console.log(Car.getInfo());
+Calculator.read();
+console.log(Calculator.sum());
+console.log(Calculator.multiply());
