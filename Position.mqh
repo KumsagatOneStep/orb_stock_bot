@@ -32,7 +32,7 @@ void OnPositionOpened(string symbol, int magic, double takeProfit)
    for(int i = 0; i < PositionsTotal(); i++)
    {
       ulong t = PositionGetTicket(i);
-      if(t > 0 &&
+      if(t > 0 && PositionSelectByTicket(t) &&   // N1: select перед чтением MAGIC/SYMBOL
          (int)PositionGetInteger(POSITION_MAGIC) == magic &&
          PositionGetString(POSITION_SYMBOL) == symbol)
       {
@@ -103,6 +103,9 @@ void CheckBreakeven(string symbol, int magic, double breakevenThreshold)
    if(g_beDone)
       return;
 
+   if(breakevenThreshold <= 0.0)
+      return;   // N5: breakevenThreshold=0 иначе BE срабатывал бы на каждом прибыльном тике
+
    if(g_entryPrice <= 0.0)
       return;
 
@@ -112,8 +115,8 @@ void CheckBreakeven(string symbol, int magic, double breakevenThreshold)
    {
       ulong ticket = PositionGetTicket(i);
       if(ticket <= 0) continue;
+      if(!PositionSelectByTicket(ticket)) continue;   // N2: select до MAGIC-фильтра
       if((int)PositionGetInteger(POSITION_MAGIC) != magic) continue;
-      if(!PositionSelectByTicket(ticket)) continue;   // BUG 8: явный выбор перед чтением свойств
 
       found = true;
       ENUM_POSITION_TYPE posType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
@@ -193,8 +196,8 @@ bool CheckEodClose(string symbol, int magic, int etOffset)
    {
       ulong ticket = PositionGetTicket(i);
       if(ticket <= 0) continue;
+      if(!PositionSelectByTicket(ticket)) continue;   // N4: select до MAGIC-фильтра (BUG A fix был неполным)
       if((int)PositionGetInteger(POSITION_MAGIC) != magic) continue;
-      if(!PositionSelectByTicket(ticket)) continue;   // BUG A: явный выбор перед чтением PROFIT/VOLUME/TYPE
 
       double pnl = PositionGetDouble(POSITION_PROFIT);
 

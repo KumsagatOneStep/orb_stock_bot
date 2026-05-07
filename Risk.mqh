@@ -164,17 +164,18 @@ bool CheckDrawdown(double maxDrawdownPercent, double initialBalance)
 //|  Сброс всех дневных переменных и GlobalVariables                 |
 //|  Вызывается при обнаружении смены даты (00:00 GMT)               |
 //+------------------------------------------------------------------+
-void ResetDailyState()
+void ResetDailyState(int magic)
 {
    g_dayStartBalance = AccountInfoDouble(ACCOUNT_BALANCE);
    g_dailyTradeDone  = false;
    g_beDone          = false;
    g_levelALong      = false;
    g_levelAShort     = false;
-   // FIX БАГ 1: сброс цены входа каждый день — иначе BE использует цену вчерашней сделки
    g_entryPrice        = 0.0;
-   g_positionWasOpen   = false;
-   g_eodCloseAttempts  = 0;   // BUG 12: сброс счётчика EOD-попыток
+   // N11: не сбрасываем флаг если позиция реально открыта overnight
+   if(PositionsTotalByMagic(magic) == 0)
+      g_positionWasOpen = false;
+   g_eodCloseAttempts  = 0;
 
    // Сбрасываем GlobalVariables (раздел 5.2, 6.2)
    GlobalVariableSet("ORB_TRADE_DONE",  0.0);
@@ -195,7 +196,7 @@ void ResetDailyState()
 //|  При смене — вызывает ResetDailyState() и обновляет дату         |
 //|  Сброс происходит при переходе через 00:00 GMT (сервер UTC+0)    |
 //+------------------------------------------------------------------+
-bool CheckNewDay()
+bool CheckNewDay(int magic)
 {
    MqlDateTime nowStruct;
    TimeToStruct(TimeTradeServer(), nowStruct);
@@ -213,8 +214,8 @@ bool CheckNewDay()
                              TimeToString(todayDate,       TIME_DATE)));
       g_lastTradeDate = todayDate;
       GlobalVariableSet("ORB_LAST_DATE", (double)(long)todayDate);
-      ResetDailyState();
-      return true;   // BUG G: сигнализируем вызывающему о смене дня
+      ResetDailyState(magic);   // N11: передаём magic для проверки overnight позиции
+      return true;
    }
    return false;
 }
@@ -251,9 +252,9 @@ void InitRisk(int magic)
       for(int i = 0; i < PositionsTotal(); i++)
       {
          ulong t = PositionGetTicket(i);
-         if(t > 0 && (int)PositionGetInteger(POSITION_MAGIC) == magic)
+         if(t > 0 && PositionSelectByTicket(t) &&   // N3: select до MAGIC-фильтра — иначе g_beDone=true при старте
+            (int)PositionGetInteger(POSITION_MAGIC) == magic)
          {
-            if(PositionSelectByTicket(t))
             {
                double posSL = PositionGetDouble(POSITION_SL);
                if(entryPrice > 0.0 && MathAbs(posSL - entryPrice) < 0.001)

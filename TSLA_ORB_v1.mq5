@@ -133,9 +133,9 @@ void OnTick()
    }
 
    //--- 1. Детектор смены дня (00:00 GMT → сброс состояния, раздел 5.2)
-   if(CheckNewDay())
+   if(CheckNewDay(InpMagic))
    {
-      g_inEntryWindow  = false;   // BUG G: сброс флагов окна при смене дня
+      g_inEntryWindow  = false;
       g_firstEntryTick = true;
    }
 
@@ -181,7 +181,7 @@ void OnTick()
       g_inEntryWindow  = true;
       g_firstEntryTick = true;
    }
-   if(!nowInWindow)
+   if(!nowInWindow && g_inEntryWindow)   // N10: только при переходе ИЗ окна, не каждый тик
    {
       g_inEntryWindow  = false;
       g_firstEntryTick = true;
@@ -229,9 +229,16 @@ void OnTick()
 //+------------------------------------------------------------------+
 void OnTimer()
 {
+   // N14: сброс дня и через таймер — не ждём первого тика
+   if(CheckNewDay(InpMagic))
+   {
+      g_inEntryWindow  = false;
+      g_firstEntryTick = true;
+   }
+
    if(g_eaState == STATE_IN_TRADE || PositionsTotalByMagic(InpMagic) > 0)
    {
-      CheckPositionClosed(InpSymbol, InpMagic);   // BUG F: детектируем закрытие и в OnTimer
+      CheckPositionClosed(InpSymbol, InpMagic);
       CheckEodClose(InpSymbol, InpMagic, InpETOffset);
    }
    else
