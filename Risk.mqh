@@ -41,9 +41,11 @@ int PositionsTotalByMagic(int magic)
    int count = 0;
    for(int i = 0; i < PositionsTotal(); i++)
    {
-      if(PositionGetTicket(i) > 0)
-         if((int)PositionGetInteger(POSITION_MAGIC) == magic)
-            count++;
+      ulong ticket = PositionGetTicket(i);
+      if(ticket <= 0) continue;
+      if(!PositionSelectByTicket(ticket)) continue;   // BUG B: явный выбор перед POSITION_MAGIC
+      if((int)PositionGetInteger(POSITION_MAGIC) == magic)
+         count++;
    }
    return count;
 }
@@ -193,7 +195,7 @@ void ResetDailyState()
 //|  При смене — вызывает ResetDailyState() и обновляет дату         |
 //|  Сброс происходит при переходе через 00:00 GMT (сервер UTC+0)    |
 //+------------------------------------------------------------------+
-void CheckNewDay()
+bool CheckNewDay()
 {
    MqlDateTime nowStruct;
    TimeToStruct(TimeTradeServer(), nowStruct);
@@ -210,9 +212,11 @@ void CheckNewDay()
                              TimeToString(g_lastTradeDate, TIME_DATE),
                              TimeToString(todayDate,       TIME_DATE)));
       g_lastTradeDate = todayDate;
-      GlobalVariableSet("ORB_LAST_DATE", (double)(long)todayDate);   // BUG 7: (int) обрезал 64-bit datetime
+      GlobalVariableSet("ORB_LAST_DATE", (double)(long)todayDate);
       ResetDailyState();
+      return true;   // BUG G: сигнализируем вызывающему о смене дня
    }
+   return false;
 }
 
 //+------------------------------------------------------------------+

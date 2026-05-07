@@ -133,7 +133,11 @@ void OnTick()
    }
 
    //--- 1. Детектор смены дня (00:00 GMT → сброс состояния, раздел 5.2)
-   CheckNewDay();
+   if(CheckNewDay())
+   {
+      g_inEntryWindow  = false;   // BUG G: сброс флагов окна при смене дня
+      g_firstEntryTick = true;
+   }
 
    //--- 2. Фиксация ORB-уровней в момент закрытия свечи 09:25–09:30 ET
    ProcessLevelTick(InpSymbol, InpETOffset, InpUseDynamicParams, InpBasePrice);
@@ -226,9 +230,12 @@ void OnTick()
 void OnTimer()
 {
    if(g_eaState == STATE_IN_TRADE || PositionsTotalByMagic(InpMagic) > 0)
+   {
+      CheckPositionClosed(InpSymbol, InpMagic);   // BUG F: детектируем закрытие и в OnTimer
       CheckEodClose(InpSymbol, InpMagic, InpETOffset);
+   }
    else
-      CheckEntryWindowExpiry(InpETOffset);   // BUG 10: экспирация окна через таймер, не только на тике
+      CheckEntryWindowExpiry(InpETOffset);
 }
 
 //+------------------------------------------------------------------+

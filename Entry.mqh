@@ -235,7 +235,7 @@ ulong ProcessEntryTick(string symbol,
       if(!CheckDailyLoss(maxDailyLossPercent))
          return 0;
 
-      double sl      = g_preHigh;
+      double sl      = ask - entryOffset;   // BUG D: SL точно на entryOffset от цены входа, не от уровня ORB
       double tpPrelim = ask + takeProfit;
 
       LogInfo(StringFormat("LONG-триггер | Ask=%.2f >= %.2f | SL=%.2f",
@@ -261,7 +261,7 @@ ulong ProcessEntryTick(string symbol,
       if(!CheckDailyLoss(maxDailyLossPercent))   // FIX BUG 2
          return 0;
 
-      double sl      = g_preLow;
+      double sl      = bid + entryOffset;   // BUG D: SL точно на entryOffset от цены входа, не от уровня ORB
       double tpPrelim = bid - takeProfit;
 
       LogInfo(StringFormat("SHORT-триггер | Bid=%.2f <= %.2f | SL=%.2f",

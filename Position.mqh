@@ -194,6 +194,7 @@ bool CheckEodClose(string symbol, int magic, int etOffset)
       ulong ticket = PositionGetTicket(i);
       if(ticket <= 0) continue;
       if((int)PositionGetInteger(POSITION_MAGIC) != magic) continue;
+      if(!PositionSelectByTicket(ticket)) continue;   // BUG A: явный выбор перед чтением PROFIT/VOLUME/TYPE
 
       double pnl = PositionGetDouble(POSITION_PROFIT);
 
@@ -283,6 +284,7 @@ void CheckPositionClosed(string symbol, int magic)
    {
       ulong dealTicket = HistoryDealGetTicket(i);
       if(dealTicket <= 0) continue;
+      if(!HistoryDealSelect(dealTicket)) continue;   // BUG E: без select все Get* читают из предыдущей сделки
       if((int)HistoryDealGetInteger(dealTicket, DEAL_MAGIC) != magic) continue;
       if(HistoryDealGetString(dealTicket, DEAL_SYMBOL) != symbol) continue;
 
@@ -326,21 +328,22 @@ void InitPosition(int magic)
    // Проверяем, есть ли сейчас открытая позиция
    for(int i = 0; i < PositionsTotal(); i++)
    {
-      if(PositionGetTicket(i) > 0 &&
-         (int)PositionGetInteger(POSITION_MAGIC) == magic)
-      {
-         g_positionWasOpen = true;
+      ulong t = PositionGetTicket(i);
+      if(t <= 0) continue;
+      if(!PositionSelectByTicket(t)) continue;   // BUG B: явный выбор перед чтением свойств
+      if((int)PositionGetInteger(POSITION_MAGIC) != magic) continue;
 
-         // Если EntryPrice не восстановлен из GV — берём из позиции
-         if(g_entryPrice <= 0.0)
-            g_entryPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+      g_positionWasOpen = true;
 
-         LogInfo(StringFormat("Position-модуль: позиция восстановлена | "
-                               "EntryPrice=%.2f  BeDone=%s",
-                               g_entryPrice,
-                               g_beDone ? "true" : "false"));
-         break;
-      }
+      // Если EntryPrice не восстановлен из GV — берём из позиции
+      if(g_entryPrice <= 0.0)
+         g_entryPrice = PositionGetDouble(POSITION_PRICE_OPEN);
+
+      LogInfo(StringFormat("Position-модуль: позиция восстановлена | "
+                            "EntryPrice=%.2f  BeDone=%s",
+                            g_entryPrice,
+                            g_beDone ? "true" : "false"));
+      break;
    }
 }
 

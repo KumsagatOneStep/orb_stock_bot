@@ -151,7 +151,10 @@ bool FixLevelsFromHistory(string symbol, int etOffset,
    {
       double currentPrice = iClose(symbol, PERIOD_M5, candleIdx);
       if(currentPrice > 0.0)
+      {
          CalcDynamicParams(currentPrice, basePrice);
+         GlobalVariableSet("ORB_CLOSE_PRICE", currentPrice);   // BUG C: сохраняем для восстановления после реконнекта
+      }
    }
 
    // Сохраняем в GlobalVariables для восстановления после обрыва (раздел 7.3)
@@ -176,7 +179,7 @@ bool FixLevelsFromHistory(string symbol, int etOffset,
 //|  Используется при переподключении или позднем старте             |
 //|  Возвращает true если значения в GV валидны                      |
 //+------------------------------------------------------------------+
-bool RestoreLevelsFromGV()
+bool RestoreLevelsFromGV(bool useDynamic = false, double basePrice = 400.0)
 {
    if(!GlobalVariableCheck("ORB_PRE_HIGH") || !GlobalVariableCheck("ORB_PRE_LOW"))
       return false;
@@ -191,6 +194,14 @@ bool RestoreLevelsFromGV()
    g_preHigh     = savedHigh;
    g_preLow      = savedLow;
    g_levelsFixed = true;
+
+   // BUG C: восстанавливаем динамические параметры из сохранённой цены ORB-свечи
+   if(useDynamic && basePrice > 0.0 && GlobalVariableCheck("ORB_CLOSE_PRICE"))
+   {
+      double savedClose = GlobalVariableGet("ORB_CLOSE_PRICE");
+      if(savedClose > 0.0)
+         CalcDynamicParams(savedClose, basePrice);
+   }
 
    LogInfo(StringFormat("Уровни восстановлены из GlobalVariables | "
                         "PRE_HIGH=%.2f  PRE_LOW=%.2f",
@@ -224,7 +235,7 @@ void InitLevels(string symbol, int etOffset, bool hasOpenPosition,
    //--- Сценарий A: есть открытая позиция → восстанавливаем и продолжаем мониторинг
    if(hasOpenPosition)
    {
-      if(!RestoreLevelsFromGV())
+      if(!RestoreLevelsFromGV(useDynamic, basePrice))   // BUG C: передаём параметры для восстановления dynParams
          FixLevelsFromHistory(symbol, etOffset, useDynamic, basePrice);   // Fallback: ищем в M5
 
       g_eaState = STATE_IN_TRADE;
@@ -252,10 +263,10 @@ void InitLevels(string symbol, int etOffset, bool hasOpenPosition,
                            "восстановление уровней",
                            now.hour, now.min));
 
-      if(!RestoreLevelsFromGV())
+      if(!RestoreLevelsFromGV(useDynamic, basePrice))   // BUG C: передаём параметры для восстановления dynParams
          FixLevelsFromHistory(symbol, etOffset, useDynamic, basePrice);
       else
-         g_eaState = STATE_LEVELS_SET;   // BUG 6: без этого EA молчит после реконнекта
+         g_eaState = STATE_LEVELS_SET;
       // При неудаче FixLevelsFromHistory сам выставит STATE_DISABLED_TODAY
 
       return;
@@ -312,9 +323,10 @@ void ResetLevels()
    g_dynTP          = 0.0;
    g_dynReady       = false;
 
-   GlobalVariableSet("ORB_PRE_HIGH", 0.0);
-   GlobalVariableSet("ORB_PRE_LOW",  0.0);
-   GlobalVariableSet("ORB_STATE",    (double)STATE_WAITING);
+   GlobalVariableSet("ORB_PRE_HIGH",    0.0);
+   GlobalVariableSet("ORB_PRE_LOW",     0.0);
+   GlobalVariableSet("ORB_CLOSE_PRICE", 0.0);   // BUG C: сброс сохранённой цены ORB-свечи
+   GlobalVariableSet("ORB_STATE",       (double)STATE_WAITING);
 
    LogInfo("Уровни сброшены — начало нового торгового дня");
 }
