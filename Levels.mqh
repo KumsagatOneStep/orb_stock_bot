@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //|                                                       Levels.mqh |
-//|           TSLA Pre-Market ORB Level Break EA — v1.5              |
+//|           TSLA Pre-Market ORB Level Break EA — v1.6              |
 //|           Модуль: фиксация уровней PRE_HIGH / PRE_LOW            |
 //|                                                                  |
 //|  Логика:                                                         |
@@ -30,10 +30,15 @@ enum ENUM_EA_STATE
 //|  Разделяемые переменные модуля                                   |
 //|  Объявляются один раз — видны всему советнику после #include     |
 //+------------------------------------------------------------------+
-double        g_preHigh     = 0.0;           // Верхний уровень ORB (PRE_HIGH)
-double        g_preLow      = 0.0;           // Нижний уровень ORB  (PRE_LOW)
-ENUM_EA_STATE g_eaState     = STATE_WAITING; // Текущее состояние EA
-bool          g_levelsFixed = false;         // Флаг однократной фиксации уровней
+double        g_preHigh        = 0.0;           // Верхний уровень ORB (PRE_HIGH)
+double        g_preLow         = 0.0;           // Нижний уровень ORB  (PRE_LOW)
+ENUM_EA_STATE g_eaState        = STATE_WAITING; // Текущее состояние EA
+bool          g_levelsFixed    = false;         // Флаг однократной фиксации уровней
+
+// Динамические параметры (v1.6) — масштабируются от цены ORB-свечи
+double        g_dynEntryOffset = 0.0;           // EntryOffset = SL-дистанция (dynamic)
+double        g_dynTP          = 0.0;           // TakeProfit-дистанция (dynamic)
+bool          g_dynReady       = false;         // Флаг: динамические параметры вычислены
 
 //+------------------------------------------------------------------+
 //|  Возвращает серверный час открытия ORB-свечи                     |
@@ -45,6 +50,22 @@ bool          g_levelsFixed = false;         // Флаг однократной 
 int GetOrbCandleHour(int etOffset)
 {
    return 9 - etOffset;
+}
+
+//+------------------------------------------------------------------+
+//|  Расчёт динамических параметров (v1.6)                           |
+//|  EntryOffset = SL = 0.50 * (currentPrice / basePrice)           |
+//|  TakeProfit  = 6.00 * (currentPrice / basePrice)                |
+//|  R:R = 1:12 при любой цене TSLA                                  |
+//+------------------------------------------------------------------+
+void CalcDynamicParams(double currentPrice, double basePrice)
+{
+   double ratio     = currentPrice / basePrice;
+   g_dynEntryOffset = NormalizeDouble(0.50 * ratio, 2);
+   g_dynTP          = NormalizeDouble(6.00 * ratio, 2);
+   g_dynReady       = true;
+   LogInfo(StringFormat("Dynamic params | Price=$%.2f  Entry=$%.2f  SL=$%.2f  TP=$%.2f",
+                         currentPrice, g_dynEntryOffset, g_dynEntryOffset, g_dynTP));
 }
 
 //+------------------------------------------------------------------+
@@ -99,7 +120,8 @@ int FindOrbCandleIndex(string symbol, int etOffset)
 //|  Edge case (раздел 7.1): свеча не найдена →                      |
 //|    STATE_DISABLED_TODAY + Push-уведомление                       |
 //+------------------------------------------------------------------+
-bool FixLevelsFromHistory(string symbol, int etOffset)
+bool FixLevelsFromHistory(string symbol, int etOffset,
+                          bool useDynamic = false, double basePrice = 400.0)
 {
    int candleIdx = FindOrbCandleIndex(symbol, etOffset);
 
@@ -123,6 +145,14 @@ bool FixLevelsFromHistory(string symbol, int etOffset)
    g_preLow      = iLow(symbol,  PERIOD_M5, candleIdx);
    g_eaState     = STATE_LEVELS_SET;
    g_levelsFixed = true;
+
+   // v1.6: динамические параметры по цене закрытия ORB-свечи
+   if(useDynamic && basePrice > 0.0)
+   {
+      double currentPrice = iClose(symbol, PERIOD_M5, candleIdx);
+      if(currentPrice > 0.0)
+         CalcDynamicParams(currentPrice, basePrice);
+   }
 
    // Сохраняем в GlobalVariables для восстановления после обрыва (раздел 7.3)
    GlobalVariableSet("ORB_PRE_HIGH", g_preHigh);
@@ -182,7 +212,8 @@ bool RestoreLevelsFromGV()
 //|    C. В окне входа       → попытка восстановить уровни           |
 //|    D. До фиксации        → STATE_WAITING, штатный запуск         |
 //+------------------------------------------------------------------+
-void InitLevels(string symbol, int etOffset, bool hasOpenPosition)
+void InitLevels(string symbol, int etOffset, bool hasOpenPosition,
+                bool useDynamic = false, double basePrice = 400.0)
 {
    MqlDateTime now;
    TimeToStruct(TimeTradeServer(), now);
@@ -194,7 +225,7 @@ void InitLevels(string symbol, int etOffset, bool hasOpenPosition)
    if(hasOpenPosition)
    {
       if(!RestoreLevelsFromGV())
-         FixLevelsFromHistory(symbol, etOffset);   // Fallback: ищем в M5
+         FixLevelsFromHistory(symbol, etOffset, useDynamic, basePrice);   // Fallback: ищем в M5
 
       g_eaState = STATE_IN_TRADE;
       LogInfo(StringFormat("EA восстановлен с открытой позицией | "
@@ -222,7 +253,7 @@ void InitLevels(string symbol, int etOffset, bool hasOpenPosition)
                            now.hour, now.min));
 
       if(!RestoreLevelsFromGV())
-         FixLevelsFromHistory(symbol, etOffset);
+         FixLevelsFromHistory(symbol, etOffset, useDynamic, basePrice);
       // При неудаче FixLevelsFromHistory сам выставит STATE_DISABLED_TODAY
 
       return;
@@ -241,7 +272,8 @@ void InitLevels(string symbol, int etOffset, bool hasOpenPosition)
 //|    • Вызывает FixLevelsFromHistory()                             |
 //|    • g_levelsFixed гарантирует однократную фиксацию             |
 //+------------------------------------------------------------------+
-void ProcessLevelTick(string symbol, int etOffset)
+void ProcessLevelTick(string symbol, int etOffset,
+                      bool useDynamic = false, double basePrice = 400.0)
 {
    // Уже зафиксированы / не нужна обработка
    if(g_levelsFixed)
@@ -259,7 +291,7 @@ void ProcessLevelTick(string symbol, int etOffset)
    {
       LogDebug(StringFormat("Тик %02d:%02d:%02d — момент фиксации ORB-уровней",
                              now.hour, now.min, now.sec));
-      FixLevelsFromHistory(symbol, etOffset);
+      FixLevelsFromHistory(symbol, etOffset, useDynamic, basePrice);
       // g_levelsFixed выставляется внутри при успехе → защита от повтора
    }
 }
@@ -270,10 +302,13 @@ void ProcessLevelTick(string symbol, int etOffset)
 //+------------------------------------------------------------------+
 void ResetLevels()
 {
-   g_preHigh     = 0.0;
-   g_preLow      = 0.0;
-   g_eaState     = STATE_WAITING;
-   g_levelsFixed = false;
+   g_preHigh        = 0.0;
+   g_preLow         = 0.0;
+   g_eaState        = STATE_WAITING;
+   g_levelsFixed    = false;
+   g_dynEntryOffset = 0.0;
+   g_dynTP          = 0.0;
+   g_dynReady       = false;
 
    GlobalVariableSet("ORB_PRE_HIGH", 0.0);
    GlobalVariableSet("ORB_PRE_LOW",  0.0);

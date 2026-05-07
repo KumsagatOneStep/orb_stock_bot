@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //|                                               TSLA_ORB_v1.mq5   |
-//|           TSLA Pre-Market ORB Level Break EA — v1.5              |
+//|           TSLA Pre-Market ORB Level Break EA — v1.6              |
 //|                                                                  |
 //|  Стратегия: пробой уровней последней 5M свечи премаркета         |
 //|  Свеча:     09:25–09:30 ET (13:25–13:30 / 14:25–14:30 UTC)      |
@@ -9,7 +9,7 @@
 //|  Брокер:    Exness MT5, Hedging, ContractSize=100                 |
 //+------------------------------------------------------------------+
 #property copyright "TSLA ORB EA v1.5"
-#property version   "1.50"
+#property version   "1.60"
 
 #include "Logger.mqh"
 #include "Levels.mqh"
@@ -33,6 +33,8 @@ input int      InpETOffset            = -4;         // Смещение ET: ле
 input double   InpMaxDailyLossPercent = 2.0;        // Дневной лимит убытка (0=откл.)
 input double   InpMaxDrawdownPercent  = 0.0;        // Макс. просадка (0=откл.)
 input double   InpSpikeFilterThreshold= 2.00;       // Фильтр спайков в USD (0=откл.)
+input double   InpBasePrice           = 400.00;     // Эталонная цена $ для динамических параметров
+input bool     InpUseDynamicParams    = true;       // Динамический EntryOffset/SL/TP (v1.6)
 input int      InpMagic               = 20250101;   // Magic number EA
 input bool     InpEnablePush          = true;       // Push-уведомления
 input bool     InpEnableEmail         = false;      // Email-уведомления
@@ -73,16 +75,18 @@ int OnInit()
 
    //--- 6. Инициализация модуля уровней (сценарии позднего запуска 7.4)
    bool hasPosition = (PositionsTotalByMagic(InpMagic) > 0);
-   InitLevels(InpSymbol, InpETOffset, hasPosition);
+   InitLevels(InpSymbol, InpETOffset, hasPosition, InpUseDynamicParams, InpBasePrice);
 
    //--- 7. Информационный лог запуска
    LogInfo(StringFormat("EA запущен | Инструмент=%s  Баланс=%.2f  "
-                         "Лот=%s(%.2f)  EntryOffset=%.2f  TP=%.2f  "
-                         "BE=%.2f  ETOffset=%d  Magic=%d",
+                         "Лот=%s(%.2f)  DynParams=%s(Base=$%.2f)  "
+                         "EntryOffset=%.2f  TP=%.2f  BE=%.2f  ETOffset=%d  Magic=%d",
                          InpSymbol,
                          g_initialBalance,
                          InpUseFixedLot ? "фикс" : "авто",
                          InpUseFixedLot ? InpFixedLot : InpRiskPercent,
+                         InpUseDynamicParams ? "ON" : "OFF",
+                         InpBasePrice,
                          InpEntryOffset,
                          InpTakeProfit,
                          InpBreakevenThreshold,
@@ -132,7 +136,7 @@ void OnTick()
    CheckNewDay();
 
    //--- 2. Фиксация ORB-уровней в момент закрытия свечи 09:25–09:30 ET
-   ProcessLevelTick(InpSymbol, InpETOffset);
+   ProcessLevelTick(InpSymbol, InpETOffset, InpUseDynamicParams, InpBasePrice);
 
    //--- 3. Нет смысла продолжать если советник отключён на сегодня
    if(g_eaState == STATE_DISABLED_TODAY)
@@ -179,17 +183,23 @@ void OnTick()
       g_firstEntryTick = true;
    }
 
-   //--- 6c. Рассчитываем лот
-   double lot = CalcLotSize(InpUseFixedLot, InpFixedLot,
-                             InpRiskPercent, InpEntryOffset);
+   //--- 6c. Выбор активных параметров: динамические или фиксированные (v1.6)
+   double activeEntryOffset = (InpUseDynamicParams && g_dynReady)
+                              ? g_dynEntryOffset : InpEntryOffset;
+   double activeTakeProfit  = (InpUseDynamicParams && g_dynReady)
+                              ? g_dynTP : InpTakeProfit;
 
-   //--- 6d. Попытка входа
+   //--- 6d. Рассчитываем лот (используем активный EntryOffset как SL-дистанцию)
+   double lot = CalcLotSize(InpUseFixedLot, InpFixedLot,
+                             InpRiskPercent, activeEntryOffset);
+
+   //--- 6e. Попытка входа
    // FIX BUG 2: передаём InpMaxDailyLossPercent в ProcessEntryTick
    ulong ticket = ProcessEntryTick(InpSymbol,
                                     InpETOffset,
-                                    InpEntryOffset,
+                                    activeEntryOffset,
                                     lot,
-                                    InpTakeProfit,
+                                    activeTakeProfit,
                                     InpMaxDailyLossPercent,   // FIX BUG 2
                                     InpMaxSlippage,
                                     InpRetryDelay,
@@ -197,11 +207,11 @@ void OnTick()
                                     InpSpikeFilterThreshold,
                                     g_firstEntryTick);
 
-   //--- 6e. Немедленная пост-обработка после открытия (FIX БАГ 1 + БАГ 2)
+   //--- 6f. Немедленная пост-обработка после открытия (FIX БАГ 1 + БАГ 2)
    //  Вызываем OnPositionOpened сразу — иначе CheckBreakeven на следующем тике
    //  использует g_entryPrice от вчерашней сделки и срабатывает некорректно
    if(ticket > 0)
-      OnPositionOpened(InpSymbol, InpMagic, InpTakeProfit);
+      OnPositionOpened(InpSymbol, InpMagic, activeTakeProfit);
 
    // После первого тика в окне сбрасываем флаг
    if(g_firstEntryTick && nowInWindow)
