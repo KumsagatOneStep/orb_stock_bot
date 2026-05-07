@@ -113,6 +113,7 @@ void CheckBreakeven(string symbol, int magic, double breakevenThreshold)
       ulong ticket = PositionGetTicket(i);
       if(ticket <= 0) continue;
       if((int)PositionGetInteger(POSITION_MAGIC) != magic) continue;
+      if(!PositionSelectByTicket(ticket)) continue;   // BUG 8: явный выбор перед чтением свойств
 
       found = true;
       ENUM_POSITION_TYPE posType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
@@ -183,6 +184,10 @@ bool CheckEodClose(string symbol, int magic, int etOffset)
    if(now.hour < eodHour) return false;
    if(now.hour == eodHour && now.min < eodMin) return false;
 
+   // BUG 12: ограничение числа попыток — не спамим ошибками если биржа закрыта
+   if(g_eodCloseAttempts >= EOD_MAX_ATTEMPTS)
+      return false;
+
    // Ищем позицию с нашим Magic
    for(int i = PositionsTotal() - 1; i >= 0; i--)
    {
@@ -229,8 +234,9 @@ bool CheckEodClose(string symbol, int magic, int etOffset)
       }
       else
       {
-         LogError(StringFormat("EOD закрытие не удалось: retcode=%d  ошибка=%d",
-                                res.retcode, GetLastError()));
+         g_eodCloseAttempts++;
+         LogError(StringFormat("EOD закрытие не удалось (попытка %d/%d): retcode=%d  ошибка=%d",
+                                g_eodCloseAttempts, EOD_MAX_ATTEMPTS, res.retcode, GetLastError()));
       }
    }
 
@@ -253,8 +259,10 @@ void CheckPositionClosed(string symbol, int magic)
    bool stillOpen = false;
    for(int i = 0; i < PositionsTotal(); i++)
    {
-      if(PositionGetTicket(i) > 0 &&
-         (int)PositionGetInteger(POSITION_MAGIC) == magic)
+      ulong t = PositionGetTicket(i);
+      if(t <= 0) continue;
+      if(!PositionSelectByTicket(t)) continue;   // BUG 9: явный выбор перед чтением POSITION_MAGIC
+      if((int)PositionGetInteger(POSITION_MAGIC) == magic)
       {
          stillOpen = true;
          break;
@@ -265,7 +273,7 @@ void CheckPositionClosed(string symbol, int magic)
       return;
 
    // Позиция закрылась — ищем результат в истории за последние сутки
-   HistorySelect(TimeCurrent() - 86400, TimeCurrent());
+   HistorySelect(TimeTradeServer() - 86400, TimeTradeServer());   // BUG 5: TimeCurrent() != серверное время
 
    double totalPnl = 0.0;
    string closeReason = "SL/TP";

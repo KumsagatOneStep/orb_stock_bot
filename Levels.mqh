@@ -64,8 +64,8 @@ void CalcDynamicParams(double currentPrice, double basePrice)
    g_dynEntryOffset = NormalizeDouble(0.50 * ratio, 2);
    g_dynTP          = NormalizeDouble(6.00 * ratio, 2);
    g_dynReady       = true;
-   LogInfo(StringFormat("Dynamic params | Price=$%.2f  Entry=$%.2f  SL=$%.2f  TP=$%.2f",
-                         currentPrice, g_dynEntryOffset, g_dynEntryOffset, g_dynTP));
+   LogInfo(StringFormat("Dynamic params | Price=$%.2f  EntryOffset=$%.2f  TP=$%.2f  Ratio=%.4f",
+                         currentPrice, g_dynEntryOffset, g_dynTP, currentPrice / basePrice));
 }
 
 //+------------------------------------------------------------------+
@@ -254,6 +254,8 @@ void InitLevels(string symbol, int etOffset, bool hasOpenPosition,
 
       if(!RestoreLevelsFromGV())
          FixLevelsFromHistory(symbol, etOffset, useDynamic, basePrice);
+      else
+         g_eaState = STATE_LEVELS_SET;   // BUG 6: без этого EA молчит после реконнекта
       // При неудаче FixLevelsFromHistory сам выставит STATE_DISABLED_TODAY
 
       return;

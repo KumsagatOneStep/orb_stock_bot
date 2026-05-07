@@ -227,6 +227,8 @@ void OnTimer()
 {
    if(g_eaState == STATE_IN_TRADE || PositionsTotalByMagic(InpMagic) > 0)
       CheckEodClose(InpSymbol, InpMagic, InpETOffset);
+   else
+      CheckEntryWindowExpiry(InpETOffset);   // BUG 10: экспирация окна через таймер, не только на тике
 }
 
 //+------------------------------------------------------------------+
@@ -240,7 +242,11 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
    if(trans.type != TRADE_TRANSACTION_DEAL_ADD) return;
 
    ulong dealTicket = trans.deal;
-   if(!HistoryDealSelect(dealTicket)) return;
+   if(!HistoryDealSelect(dealTicket))
+   {
+      LogWarning(StringFormat("OnTradeTransaction: HistoryDealSelect(%I64u) failed — PnL лог потерян", dealTicket));
+      return;
+   }
    if((int)HistoryDealGetInteger(dealTicket, DEAL_MAGIC) != InpMagic) return;
 
    ENUM_DEAL_ENTRY entry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(dealTicket, DEAL_ENTRY);

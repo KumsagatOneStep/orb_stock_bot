@@ -29,6 +29,9 @@ bool     g_levelAShort      = false; // Флаг LEVEL_A для шорта (пр
 // Перенесено из Position.mqh — чтобы ResetDailyState() мог сбрасывать каждый день
 double   g_entryPrice       = 0.0;   // Фактическая цена входа (из PositionGetDouble)
 bool     g_positionWasOpen  = false; // Флаг для детектора закрытия брокером
+int      g_eodCloseAttempts = 0;     // Счётчик попыток EOD-закрытия (BUG 12)
+
+#define EOD_MAX_ATTEMPTS 10          // Лимит попыток EOD-закрытия
 
 //+------------------------------------------------------------------+
 //|  Подсчёт открытых позиций с нашим Magic number                   |
@@ -167,8 +170,9 @@ void ResetDailyState()
    g_levelALong      = false;
    g_levelAShort     = false;
    // FIX БАГ 1: сброс цены входа каждый день — иначе BE использует цену вчерашней сделки
-   g_entryPrice      = 0.0;
-   g_positionWasOpen = false;
+   g_entryPrice        = 0.0;
+   g_positionWasOpen   = false;
+   g_eodCloseAttempts  = 0;   // BUG 12: сброс счётчика EOD-попыток
 
    // Сбрасываем GlobalVariables (раздел 5.2, 6.2)
    GlobalVariableSet("ORB_TRADE_DONE",  0.0);
@@ -206,7 +210,7 @@ void CheckNewDay()
                              TimeToString(g_lastTradeDate, TIME_DATE),
                              TimeToString(todayDate,       TIME_DATE)));
       g_lastTradeDate = todayDate;
-      GlobalVariableSet("ORB_LAST_DATE", (double)(int)todayDate);
+      GlobalVariableSet("ORB_LAST_DATE", (double)(long)todayDate);   // BUG 7: (int) обрезал 64-bit datetime
       ResetDailyState();
    }
 }

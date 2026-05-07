@@ -200,6 +200,13 @@ ulong ProcessEntryTick(string symbol,
    if(g_eaState != STATE_LEVELS_SET)
       return 0;
 
+   // BUG 3: entryOffset=0 → SL == цена входа → ордер отклонён брокером
+   if(entryOffset <= 0.0)
+   {
+      LogError("ProcessEntryTick: entryOffset должен быть > 0 — вход заблокирован");
+      return 0;
+   }
+
    if(!IsEntryAllowed(magic, etOffset))
       return 0;
 
