@@ -21,7 +21,7 @@
 //|  Входные параметры (раздел 6.3)                                  |
 //+------------------------------------------------------------------+
 input string   InpSymbol              = "TSLA";     // Торговый инструмент
-input bool     InpUseFixedLot         = true;       // Режим фиксированного лота
+input bool     InpUseFixedLot         = false;      // Режим фиксированного лота
 input double   InpFixedLot            = 0.11;       // Фиксированный лот (11 акций)
 input double   InpRiskPercent         = 1.0;        // % баланса (резервный режим)
 input double   InpEntryOffset         = 0.50;       // Отступ от уровня для входа ($)
