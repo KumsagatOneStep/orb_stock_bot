@@ -210,6 +210,13 @@ void OnTick()
 
    //--- 6d. Лот рассчитан при фиксации ORB-свечи (v1.8: плечо 1:N от TradingCapital)
    double lot = g_lotSize;
+   if(lot <= 0.0)
+   {
+      LogError("g_lotSize=0 — цена ORB свечи недоступна, вход заблокирован на сегодня");
+      g_eaState = STATE_DISABLED_TODAY;
+      GlobalVariableSet("ORB_STATE", (double)STATE_DISABLED_TODAY);
+      return;
+   }
 
    //--- 6e. Попытка входа
    // FIX BUG 2: передаём InpMaxDailyLossPercent в ProcessEntryTick
