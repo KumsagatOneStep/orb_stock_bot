@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //|                                               TSLA_ORB_v1.mq5   |
-//|           TSLA Pre-Market ORB Level Break EA — v1.7              |
+//|           TSLA Pre-Market ORB Level Break EA — v1.8              |
 //|                                                                  |
 //|  Стратегия: пробой уровней последней 5M свечи премаркета         |
 //|  Свеча:     09:25–09:30 ET (13:25–13:30 / 14:25–14:30 UTC)      |
@@ -8,8 +8,8 @@
 //|  EOD:       15:55 ET принудительное закрытие                     |
 //|  Брокер:    Exness MT5, Hedging, ContractSize=100                 |
 //+------------------------------------------------------------------+
-#property copyright "TSLA ORB EA v1.7"
-#property version   "1.70"
+#property copyright "TSLA ORB EA v1.8"
+#property version   "1.80"
 
 #include "Logger.mqh"
 #include "Levels.mqh"
@@ -21,9 +21,7 @@
 //|  Входные параметры (раздел 6.3)                                  |
 //+------------------------------------------------------------------+
 input string   InpSymbol              = "TSLA";     // Торговый инструмент
-input bool     InpUseFixedLot         = false;      // Режим фиксированного лота
-input double   InpFixedLot            = 0.11;       // Фиксированный лот (11 акций)
-input double   InpRiskPercent         = 1.0;        // % баланса (резервный режим)
+input double   InpLeverage            = 20.0;       // Плечо (1:N) для расчёта лота
 input double   InpEntryOffset         = 0.50;       // Отступ от уровня для входа ($)
 input double   InpTakeProfit          = 6.00;       // TP в USD от цены входа
 input double   InpBreakevenThreshold  = 1.50;       // Движение для переноса SL в BE ($)
@@ -82,17 +80,18 @@ int OnInit()
 
    //--- 6. Инициализация модуля уровней (сценарии позднего запуска 7.4)
    bool hasPosition = (PositionsTotalByMagic(InpMagic) > 0);
-   InitLevels(InpSymbol, InpETOffset, hasPosition, InpUseDynamicParams, InpBasePrice);
+   InitLevels(InpSymbol, InpETOffset, hasPosition, InpUseDynamicParams, InpBasePrice,
+              InpTradingRatio, InpLeverage);
 
    //--- 7. Информационный лог запуска
    LogInfo(StringFormat("EA запущен | Инструмент=%s  Баланс=%.2f  "
-                         "Лот=%s(%.2f)  DynParams=%s(Base=$%.2f)  "
+                         "Leverage=1:%.0f  TradingRatio=%.4f  DynParams=%s(Base=$%.2f)  "
                          "EntryOffset=%.2f  TP=%.2f  BE=%.2f  ETOffset=%d  Magic=%d  "
                          "StartBalance=%.2f  StopLevel=%.2f  TradingCapital=%.2f",
                          InpSymbol,
                          g_initialBalance,
-                         InpUseFixedLot ? "фикс" : "авто",
-                         InpUseFixedLot ? InpFixedLot : InpRiskPercent,
+                         InpLeverage,
+                         InpTradingRatio,
                          InpUseDynamicParams ? "ON" : "OFF",
                          InpBasePrice,
                          InpEntryOffset,
@@ -155,7 +154,8 @@ void OnTick()
    }
 
    //--- 2. Фиксация ORB-уровней в момент закрытия свечи 09:25–09:30 ET
-   ProcessLevelTick(InpSymbol, InpETOffset, InpUseDynamicParams, InpBasePrice);
+   ProcessLevelTick(InpSymbol, InpETOffset, InpUseDynamicParams, InpBasePrice,
+                    InpTradingRatio, InpLeverage);
 
    //--- 3. Нет смысла продолжать если советник отключён на сегодня
    if(g_eaState == STATE_DISABLED_TODAY)
@@ -208,9 +208,8 @@ void OnTick()
    double activeTakeProfit  = (InpUseDynamicParams && g_dynReady)
                               ? g_dynTP : InpTakeProfit;
 
-   //--- 6d. Рассчитываем лот (используем активный EntryOffset как SL-дистанцию)
-   double lot = CalcLotSize(InpUseFixedLot, InpFixedLot,
-                             InpRiskPercent, activeEntryOffset, InpTradingRatio);
+   //--- 6d. Лот рассчитан при фиксации ORB-свечи (v1.8: плечо 1:N от TradingCapital)
+   double lot = g_lotSize;
 
    //--- 6e. Попытка входа
    // FIX BUG 2: передаём InpMaxDailyLossPercent в ProcessEntryTick

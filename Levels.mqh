@@ -39,6 +39,7 @@ bool          g_levelsFixed    = false;         // Флаг однократно
 double        g_dynEntryOffset = 0.0;           // EntryOffset = SL-дистанция (dynamic)
 double        g_dynTP          = 0.0;           // TakeProfit-дистанция (dynamic)
 bool          g_dynReady       = false;         // Флаг: динамические параметры вычислены
+double        g_lotSize        = 0.0;           // Лот, рассчитанный из ORB-цены × плечо (v1.8)
 
 //+------------------------------------------------------------------+
 //|  Возвращает серверный час открытия ORB-свечи                     |
@@ -66,6 +67,42 @@ void CalcDynamicParams(double currentPrice, double basePrice)
    g_dynReady       = true;
    LogInfo(StringFormat("Dynamic params | Price=$%.2f  EntryOffset=$%.2f  TP=$%.2f  Ratio=%.4f",
                          currentPrice, g_dynEntryOffset, g_dynTP, currentPrice / basePrice));
+}
+
+//+------------------------------------------------------------------+
+//|  Расчёт лота через плечо от ORB-цены (v1.8)                     |
+//|  LotSize = (Balance × TradingRatio × Leverage) / (Price × 100)  |
+//|  Вызывается однократно при фиксации ORB-уровней                  |
+//+------------------------------------------------------------------+
+void CalcOrbLot(double orbPrice, double tradingRatio, double leverage)
+{
+   if(orbPrice <= 0.0 || tradingRatio <= 0.0 || leverage <= 0.0)
+   {
+      LogError("CalcOrbLot: некорректные параметры — лот не рассчитан");
+      return;
+   }
+
+   double balance        = AccountInfoDouble(ACCOUNT_BALANCE);
+   double tradingCapital = balance * tradingRatio;
+   double lotSize        = (tradingCapital * leverage) / (orbPrice * 100.0);
+
+   // Округление вниз до шага 0.01
+   lotSize = MathFloor(lotSize / 0.01) * 0.01;
+
+   if(lotSize > 10.0)
+   {
+      LogWarning(StringFormat("LotSize %.2f превышает MaxLot=10.00 — обрезан", lotSize));
+      lotSize = 10.0;
+   }
+   lotSize = MathMax(lotSize, 0.01);
+
+   g_lotSize = lotSize;
+   GlobalVariableSet("ORB_LOT_SIZE", g_lotSize);
+
+   LogInfo(StringFormat("Лот рассчитан: Balance=$%.2f  TradingCapital=$%.2f  "
+                        "Price=$%.2f  Leverage=1:%.0f  LotSize=%.2f  Акций=%.0f  Маржа=$%.2f",
+                        balance, tradingCapital, orbPrice, leverage,
+                        lotSize, MathRound(lotSize * 100.0), tradingCapital));
 }
 
 //+------------------------------------------------------------------+
@@ -121,7 +158,8 @@ int FindOrbCandleIndex(string symbol, int etOffset)
 //|    STATE_DISABLED_TODAY + Push-уведомление                       |
 //+------------------------------------------------------------------+
 bool FixLevelsFromHistory(string symbol, int etOffset,
-                          bool useDynamic = false, double basePrice = 400.0)
+                          bool useDynamic = false, double basePrice = 400.0,
+                          double tradingRatio = 0.7143, double leverage = 20.0)
 {
    int candleIdx = FindOrbCandleIndex(symbol, etOffset);
 
@@ -146,15 +184,18 @@ bool FixLevelsFromHistory(string symbol, int etOffset,
    g_eaState     = STATE_LEVELS_SET;
    g_levelsFixed = true;
 
-   // v1.6: динамические параметры по цене закрытия ORB-свечи
-   if(useDynamic && basePrice > 0.0)
+   // Цена закрытия ORB-свечи — нужна и для динамических параметров, и для расчёта лота
+   double orbPrice = iClose(symbol, PERIOD_M5, candleIdx);
+   if(orbPrice > 0.0)
    {
-      double currentPrice = iClose(symbol, PERIOD_M5, candleIdx);
-      if(currentPrice > 0.0)
-      {
-         CalcDynamicParams(currentPrice, basePrice);
-         GlobalVariableSet("ORB_CLOSE_PRICE", currentPrice);   // BUG C: сохраняем для восстановления после реконнекта
-      }
+      GlobalVariableSet("ORB_CLOSE_PRICE", orbPrice);
+
+      // v1.6: масштабирование EntryOffset/TP от цены свечи
+      if(useDynamic && basePrice > 0.0)
+         CalcDynamicParams(orbPrice, basePrice);
+
+      // v1.8: расчёт лота через плечо от цены ORB-свечи
+      CalcOrbLot(orbPrice, tradingRatio, leverage);
    }
 
    // Сохраняем в GlobalVariables для восстановления после обрыва (раздел 7.3)
@@ -179,7 +220,8 @@ bool FixLevelsFromHistory(string symbol, int etOffset,
 //|  Используется при переподключении или позднем старте             |
 //|  Возвращает true если значения в GV валидны                      |
 //+------------------------------------------------------------------+
-bool RestoreLevelsFromGV(bool useDynamic = false, double basePrice = 400.0)
+bool RestoreLevelsFromGV(bool useDynamic = false, double basePrice = 400.0,
+                         double tradingRatio = 0.7143, double leverage = 20.0)
 {
    if(!GlobalVariableCheck("ORB_PRE_HIGH") || !GlobalVariableCheck("ORB_PRE_LOW"))
       return false;
@@ -187,7 +229,6 @@ bool RestoreLevelsFromGV(bool useDynamic = false, double basePrice = 400.0)
    double savedHigh = GlobalVariableGet("ORB_PRE_HIGH");
    double savedLow  = GlobalVariableGet("ORB_PRE_LOW");
 
-   // Проверка валидности: значения должны быть положительными, HIGH > LOW
    if(savedHigh <= 0.0 || savedLow <= 0.0 || savedHigh <= savedLow)
       return false;
 
@@ -195,17 +236,35 @@ bool RestoreLevelsFromGV(bool useDynamic = false, double basePrice = 400.0)
    g_preLow      = savedLow;
    g_levelsFixed = true;
 
-   // BUG C: восстанавливаем динамические параметры из сохранённой цены ORB-свечи
-   if(useDynamic && basePrice > 0.0 && GlobalVariableCheck("ORB_CLOSE_PRICE"))
+   // Восстанавливаем цену ORB-свечи для динамических параметров и лота
+   if(GlobalVariableCheck("ORB_CLOSE_PRICE"))
    {
       double savedClose = GlobalVariableGet("ORB_CLOSE_PRICE");
       if(savedClose > 0.0)
-         CalcDynamicParams(savedClose, basePrice);
+      {
+         if(useDynamic && basePrice > 0.0)
+            CalcDynamicParams(savedClose, basePrice);
+
+         // Восстанавливаем лот: сначала из GV, иначе пересчитываем
+         if(GlobalVariableCheck("ORB_LOT_SIZE"))
+         {
+            double savedLot = GlobalVariableGet("ORB_LOT_SIZE");
+            if(savedLot > 0.0)
+            {
+               g_lotSize = savedLot;
+               LogInfo(StringFormat("Лот восстановлен из GV: %.2f", g_lotSize));
+            }
+            else
+               CalcOrbLot(savedClose, tradingRatio, leverage);
+         }
+         else
+            CalcOrbLot(savedClose, tradingRatio, leverage);
+      }
    }
 
    LogInfo(StringFormat("Уровни восстановлены из GlobalVariables | "
-                        "PRE_HIGH=%.2f  PRE_LOW=%.2f",
-                        g_preHigh, g_preLow));
+                        "PRE_HIGH=%.2f  PRE_LOW=%.2f  LotSize=%.2f",
+                        g_preHigh, g_preLow, g_lotSize));
    return true;
 }
 
@@ -224,7 +283,8 @@ bool RestoreLevelsFromGV(bool useDynamic = false, double basePrice = 400.0)
 //|    D. До фиксации        → STATE_WAITING, штатный запуск         |
 //+------------------------------------------------------------------+
 void InitLevels(string symbol, int etOffset, bool hasOpenPosition,
-                bool useDynamic = false, double basePrice = 400.0)
+                bool useDynamic = false, double basePrice = 400.0,
+                double tradingRatio = 0.7143, double leverage = 20.0)
 {
    MqlDateTime now;
    TimeToStruct(TimeTradeServer(), now);
@@ -235,8 +295,8 @@ void InitLevels(string symbol, int etOffset, bool hasOpenPosition,
    //--- Сценарий A: есть открытая позиция → восстанавливаем и продолжаем мониторинг
    if(hasOpenPosition)
    {
-      if(!RestoreLevelsFromGV(useDynamic, basePrice))   // BUG C: передаём параметры для восстановления dynParams
-         FixLevelsFromHistory(symbol, etOffset, useDynamic, basePrice);   // Fallback: ищем в M5
+      if(!RestoreLevelsFromGV(useDynamic, basePrice, tradingRatio, leverage))
+         FixLevelsFromHistory(symbol, etOffset, useDynamic, basePrice, tradingRatio, leverage);
 
       g_eaState = STATE_IN_TRADE;
       LogInfo(StringFormat("EA восстановлен с открытой позицией | "
@@ -263,8 +323,8 @@ void InitLevels(string symbol, int etOffset, bool hasOpenPosition,
                            "восстановление уровней",
                            now.hour, now.min));
 
-      if(!RestoreLevelsFromGV(useDynamic, basePrice))   // BUG C: передаём параметры для восстановления dynParams
-         FixLevelsFromHistory(symbol, etOffset, useDynamic, basePrice);
+      if(!RestoreLevelsFromGV(useDynamic, basePrice, tradingRatio, leverage))
+         FixLevelsFromHistory(symbol, etOffset, useDynamic, basePrice, tradingRatio, leverage);
       else
          g_eaState = STATE_LEVELS_SET;
       // При неудаче FixLevelsFromHistory сам выставит STATE_DISABLED_TODAY
@@ -286,9 +346,9 @@ void InitLevels(string symbol, int etOffset, bool hasOpenPosition,
 //|    • g_levelsFixed гарантирует однократную фиксацию             |
 //+------------------------------------------------------------------+
 void ProcessLevelTick(string symbol, int etOffset,
-                      bool useDynamic = false, double basePrice = 400.0)
+                      bool useDynamic = false, double basePrice = 400.0,
+                      double tradingRatio = 0.7143, double leverage = 20.0)
 {
-   // Уже зафиксированы / не нужна обработка
    if(g_levelsFixed)
       return;
    if(g_eaState == STATE_IN_TRADE || g_eaState == STATE_DISABLED_TODAY)
@@ -297,15 +357,13 @@ void ProcessLevelTick(string symbol, int etOffset,
    MqlDateTime now;
    TimeToStruct(TimeTradeServer(), now);
 
-   int fixHour = GetOrbCandleHour(etOffset);   // 13 или 14
+   int fixHour = GetOrbCandleHour(etOffset);
 
-   // Момент закрытия ORB-свечи: первый тик в минуте fixHour:30
    if(now.hour == fixHour && now.min == 30)
    {
       LogDebug(StringFormat("Тик %02d:%02d:%02d — момент фиксации ORB-уровней",
                              now.hour, now.min, now.sec));
-      FixLevelsFromHistory(symbol, etOffset, useDynamic, basePrice);
-      // g_levelsFixed выставляется внутри при успехе → защита от повтора
+      FixLevelsFromHistory(symbol, etOffset, useDynamic, basePrice, tradingRatio, leverage);
    }
 }
 
@@ -322,10 +380,12 @@ void ResetLevels()
    g_dynEntryOffset = 0.0;
    g_dynTP          = 0.0;
    g_dynReady       = false;
+   g_lotSize        = 0.0;
 
    GlobalVariableSet("ORB_PRE_HIGH",    0.0);
    GlobalVariableSet("ORB_PRE_LOW",     0.0);
-   GlobalVariableSet("ORB_CLOSE_PRICE", 0.0);   // BUG C: сброс сохранённой цены ORB-свечи
+   GlobalVariableSet("ORB_CLOSE_PRICE", 0.0);
+   GlobalVariableSet("ORB_LOT_SIZE",    0.0);
    GlobalVariableSet("ORB_STATE",       (double)STATE_WAITING);
 
    LogInfo("Уровни сброшены — начало нового торгового дня");

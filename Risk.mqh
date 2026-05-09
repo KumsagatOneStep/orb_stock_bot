@@ -4,7 +4,7 @@
 //|           Модуль: расчёт лота, дневной лимит, сброс состояния    |
 //|                                                                  |
 //|  Функции:                                                        |
-//|    • CalcLotSize()           — лот: фиксированный или % TradingCapital |
+//|    • CalcOrbLot()            — лот через плечо 1:20 от ORB-цены (v1.8) |
 //|    • CheckDailyLoss()        — проверка дневного лимита убытка        |
 //|    • CheckDrawdown()         — проверка максимальной просадки          |
 //|    • CheckNewDay()           — обнаружение смены даты и сброс дня     |
@@ -59,58 +59,6 @@ int PositionsTotalByMagic(int magic)
          count++;
    }
    return count;
-}
-
-//+------------------------------------------------------------------+
-//|  Расчёт размера лота                                             |
-//|                                                                  |
-//|  Режим 1 (UseFixedLot=true):  возвращает FixedLot               |
-//|  Режим 2 (UseFixedLot=false): RiskPercent % от баланса          |
-//|    LotSize = (Balance * RiskPct/100) / (EntryOffset * 100)       |
-//|                                                                  |
-//|  Результат всегда зажат в [0.01, 10.00] с шагом 0.01            |
-//+------------------------------------------------------------------+
-double CalcLotSize(bool   useFixedLot,
-                   double fixedLot,
-                   double riskPercent,
-                   double entryOffset,
-                   double tradingRatio = 1.0)
-{
-   double lotSize;
-
-   if(useFixedLot)
-   {
-      lotSize = fixedLot;
-   }
-   else
-   {
-      double balance = AccountInfoDouble(ACCOUNT_BALANCE);
-      if(balance <= 0.0 || entryOffset <= 0.0)
-      {
-         LogError("CalcLotSize: некорректный баланс или EntryOffset — используем MinLot");
-         return 0.01;
-      }
-      // TradingCapital = доля баланса для торговли (v1.7)
-      // ContractSize = 100 акций
-      double tradingCapital = balance * tradingRatio;
-      lotSize = (tradingCapital * riskPercent / 100.0) / (entryOffset * 100.0);
-   }
-
-   // Округление до шага 0.01
-   lotSize = MathFloor(lotSize / 0.01) * 0.01;
-
-   // Зажимаем в допустимые пределы (раздел 7.8)
-   if(lotSize > 10.0)
-   {
-      LogWarning(StringFormat("LotSize %.2f превышает MaxLot=10.00 — обрезан", lotSize));
-      lotSize = 10.0;
-   }
-   lotSize = MathMax(lotSize, 0.01);
-
-   // FIX BUG 7: DEBUG чтобы не спамить в логи на каждом тике
-   LogDebug(StringFormat("Рассчитан лот: %.2f (%s)",
-                          lotSize, useFixedLot ? "фиксированный" : "авто"));
-   return lotSize;
 }
 
 //+------------------------------------------------------------------+
