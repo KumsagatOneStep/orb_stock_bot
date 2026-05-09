@@ -150,4 +150,22 @@ void AlertNewDay(datetime newDate, double dayStartBalance)
                          TimeToString(newDate, TIME_DATE), dayStartBalance));
 }
 
+void AlertStopLevelApproaching(double currentBalance, double stopLevel)
+{
+   string msg = StringFormat("ПРЕДУПРЕЖДЕНИЕ: баланс приближается к стоп-уровню | "
+                              "Баланс=%.2f  StopLevel=%.2f",
+                              currentBalance, stopLevel);
+   LogWarning(msg);
+   SendEaAlert(msg, true, true, true);
+}
+
+void AlertStopLevelReached(double currentBalance, double stopLevel)
+{
+   string msg = StringFormat("СТОП: стоп-уровень достигнут — EA остановлен | "
+                              "Баланс=%.2f  StopLevel=%.2f  Требуется ручной перезапуск",
+                              currentBalance, stopLevel);
+   LogWarning(msg);
+   SendEaAlert(msg, true, true, true);
+}
+
 #endif // LOGGER_MQH

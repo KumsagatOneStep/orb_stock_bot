@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //|                                               TSLA_ORB_v1.mq5   |
-//|           TSLA Pre-Market ORB Level Break EA — v1.6              |
+//|           TSLA Pre-Market ORB Level Break EA — v1.7              |
 //|                                                                  |
 //|  Стратегия: пробой уровней последней 5M свечи премаркета         |
 //|  Свеча:     09:25–09:30 ET (13:25–13:30 / 14:25–14:30 UTC)      |
@@ -8,8 +8,8 @@
 //|  EOD:       15:55 ET принудительное закрытие                     |
 //|  Брокер:    Exness MT5, Hedging, ContractSize=100                 |
 //+------------------------------------------------------------------+
-#property copyright "TSLA ORB EA v1.5"
-#property version   "1.60"
+#property copyright "TSLA ORB EA v1.7"
+#property version   "1.70"
 
 #include "Logger.mqh"
 #include "Levels.mqh"
@@ -32,6 +32,10 @@ input int      InpRetryDelay          = 500;        // Задержка повт
 input int      InpETOffset            = -4;         // Смещение ET: лето=-4, зима=-5
 input double   InpMaxDailyLossPercent = 2.0;        // Дневной лимит убытка (0=откл.)
 input double   InpMaxDrawdownPercent  = 0.0;        // Макс. просадка (0=откл.)
+// --- Месячный риск-менеджмент (v1.7) ---
+input double   InpTradingRatio        = 0.7143;     // Доля баланса для торговли (71.43%)
+input double   InpMaxLossPercent      = 28.5;       // Макс. потеря от StartBalance (%)
+input double   InpStartBalance        = 0.0;        // Стартовый баланс периода (0=авто)
 input double   InpSpikeFilterThreshold= 2.00;       // Фильтр спайков в USD (0=откл.)
 input double   InpBasePrice           = 400.00;     // Эталонная цена $ для динамических параметров
 input bool     InpUseDynamicParams    = true;       // Динамический EntryOffset/SL/TP (v1.6)
@@ -70,6 +74,9 @@ int OnInit()
    //--- 4. Инициализация риск-модуля (восстановление из GV)
    InitRisk(InpMagic);
 
+   //--- 4a. Инициализация месячного риск-менеджмента (v1.7)
+   InitMonthlyRisk(InpStartBalance, InpMaxLossPercent, InpTradingRatio);
+
    //--- 5. Инициализация модуля позиции (восстановление EntryPrice, BE)
    InitPosition(InpMagic);
 
@@ -80,7 +87,8 @@ int OnInit()
    //--- 7. Информационный лог запуска
    LogInfo(StringFormat("EA запущен | Инструмент=%s  Баланс=%.2f  "
                          "Лот=%s(%.2f)  DynParams=%s(Base=$%.2f)  "
-                         "EntryOffset=%.2f  TP=%.2f  BE=%.2f  ETOffset=%d  Magic=%d",
+                         "EntryOffset=%.2f  TP=%.2f  BE=%.2f  ETOffset=%d  Magic=%d  "
+                         "StartBalance=%.2f  StopLevel=%.2f  TradingCapital=%.2f",
                          InpSymbol,
                          g_initialBalance,
                          InpUseFixedLot ? "фикс" : "авто",
@@ -91,7 +99,10 @@ int OnInit()
                          InpTakeProfit,
                          InpBreakevenThreshold,
                          InpETOffset,
-                         InpMagic));
+                         InpMagic,
+                         g_startBalance,
+                         g_stopLevel,
+                         g_initialBalance * InpTradingRatio));
 
    //--- 8. Установка таймера для периодических задач (каждую секунду)
    EventSetTimer(1);
@@ -125,7 +136,11 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
 {
-   //--- 0. MaxDrawdown: останавливаем EA при превышении просадки (раздел 5.4)
+   //--- 0a. Месячный стоп-уровень (v1.7): блокируем новые сделки навсегда до перезапуска
+   if(!CheckMonthlyStopLevel())
+      return;
+
+   //--- 0b. MaxDrawdown: останавливаем EA при превышении просадки (раздел 5.4)
    if(!CheckDrawdown(InpMaxDrawdownPercent, g_initialBalance))
    {
       ExpertRemove();
@@ -195,7 +210,7 @@ void OnTick()
 
    //--- 6d. Рассчитываем лот (используем активный EntryOffset как SL-дистанцию)
    double lot = CalcLotSize(InpUseFixedLot, InpFixedLot,
-                             InpRiskPercent, activeEntryOffset);
+                             InpRiskPercent, activeEntryOffset, InpTradingRatio);
 
    //--- 6e. Попытка входа
    // FIX BUG 2: передаём InpMaxDailyLossPercent в ProcessEntryTick

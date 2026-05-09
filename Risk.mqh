@@ -4,11 +4,13 @@
 //|           Модуль: расчёт лота, дневной лимит, сброс состояния    |
 //|                                                                  |
 //|  Функции:                                                        |
-//|    • CalcLotSize()      — фиксированный лот или % от баланса     |
-//|    • CheckDailyLoss()   — проверка дневного лимита убытка        |
-//|    • CheckDrawdown()    — проверка максимальной просадки          |
-//|    • CheckNewDay()      — обнаружение смены даты и сброс дня     |
-//|    • PositionsTotalByMagic() — количество открытых позиций EA    |
+//|    • CalcLotSize()           — лот: фиксированный или % TradingCapital |
+//|    • CheckDailyLoss()        — проверка дневного лимита убытка        |
+//|    • CheckDrawdown()         — проверка максимальной просадки          |
+//|    • CheckNewDay()           — обнаружение смены даты и сброс дня     |
+//|    • PositionsTotalByMagic() — количество открытых позиций EA          |
+//|    • InitMonthlyRisk()       — инициализация месячного риск-менеджмента|
+//|    • CheckMonthlyStopLevel() — проверка месячного стоп-уровня (v1.7)  |
 //+------------------------------------------------------------------+
 #ifndef RISK_MQH
 #define RISK_MQH
@@ -19,6 +21,15 @@
 //+------------------------------------------------------------------+
 //|  Разделяемые переменные риск-модуля                              |
 //+------------------------------------------------------------------+
+
+// --- Месячный риск-менеджмент (v1.7) ---
+double   g_startBalance     = 0.0;   // Стартовый баланс периода (фиксируется при запуске)
+double   g_stopLevel        = 0.0;   // Уровень остановки EA (StartBalance × (1 - MaxLoss%))
+double   g_tradingRatio     = 1.0;   // Доля баланса для расчёта торгового капитала
+bool     g_stopLevelReached = false; // Флаг: стоп-уровень достигнут, новые сделки заблокированы
+bool     g_stopLevelWarned  = false; // Флаг: предупреждение о приближении к стоп-уровню отправлено
+
+// --- Дневные переменные ---
 double   g_dayStartBalance  = 0.0;   // Баланс на 00:00 GMT текущего дня
 datetime g_lastTradeDate    = 0;     // Дата последнего торгового дня (для детектора смены)
 bool     g_dailyTradeDone   = false; // Флаг: сделка сегодня уже была
@@ -62,7 +73,8 @@ int PositionsTotalByMagic(int magic)
 double CalcLotSize(bool   useFixedLot,
                    double fixedLot,
                    double riskPercent,
-                   double entryOffset)
+                   double entryOffset,
+                   double tradingRatio = 1.0)
 {
    double lotSize;
 
@@ -78,8 +90,10 @@ double CalcLotSize(bool   useFixedLot,
          LogError("CalcLotSize: некорректный баланс или EntryOffset — используем MinLot");
          return 0.01;
       }
-      // ContractSize = 100 акций, MaxRisk в USD / (смещение × 100)
-      lotSize = (balance * riskPercent / 100.0) / (entryOffset * 100.0);
+      // TradingCapital = доля баланса для торговли (v1.7)
+      // ContractSize = 100 акций
+      double tradingCapital = balance * tradingRatio;
+      lotSize = (tradingCapital * riskPercent / 100.0) / (entryOffset * 100.0);
    }
 
    // Округление до шага 0.01
@@ -218,6 +232,103 @@ bool CheckNewDay(int magic)
       return true;
    }
    return false;
+}
+
+//+------------------------------------------------------------------+
+//|  Инициализация месячного риск-менеджмента (v1.7)                 |
+//|                                                                  |
+//|  startBalanceParam = 0 → берётся автоматически из AccountBalance |
+//|  или восстанавливается из GlobalVariable если дата совпадает     |
+//|                                                                  |
+//|  Сохраняет StartBalance в ORB_START_BALANCE для восстановления   |
+//|  при перезапуске в тот же день                                   |
+//+------------------------------------------------------------------+
+void InitMonthlyRisk(double startBalanceParam, double maxLossPercent, double tradingRatio)
+{
+   g_tradingRatio = tradingRatio;
+
+   MqlDateTime nowStruct;
+   TimeToStruct(TimeTradeServer(), nowStruct);
+   nowStruct.hour = 0; nowStruct.min = 0; nowStruct.sec = 0;
+   datetime today = StructToTime(nowStruct);
+
+   double startBalance = startBalanceParam;
+
+   if(startBalance <= 0.0)
+   {
+      // Попытка восстановить из GlobalVariable (тот же день)
+      if(GlobalVariableCheck("ORB_START_BALANCE") && GlobalVariableCheck("ORB_START_BAL_DATE"))
+      {
+         double savedBalance = GlobalVariableGet("ORB_START_BALANCE");
+         datetime savedDay   = (datetime)(long)GlobalVariableGet("ORB_START_BAL_DATE");
+         if(savedBalance > 0.0 && savedDay == today)
+         {
+            startBalance = savedBalance;
+            LogInfo(StringFormat("StartBalance восстановлен из GV: %.2f", startBalance));
+         }
+      }
+      if(startBalance <= 0.0)
+      {
+         startBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+         LogInfo(StringFormat("StartBalance = AccountBalance(): %.2f", startBalance));
+      }
+   }
+   else
+   {
+      LogInfo(StringFormat("StartBalance задан вручную: %.2f", startBalance));
+   }
+
+   g_startBalance = startBalance;
+   g_stopLevel    = NormalizeDouble(startBalance * (1.0 - maxLossPercent / 100.0), 2);
+
+   GlobalVariableSet("ORB_START_BALANCE",  g_startBalance);
+   GlobalVariableSet("ORB_START_BAL_DATE", (double)(long)today);
+
+   double tradingCapital = AccountInfoDouble(ACCOUNT_BALANCE) * tradingRatio;
+   LogInfo(StringFormat("Месячный риск | StartBalance=%.2f  StopLevel=%.2f  "
+                        "TradingCapital=%.2f  TradingRatio=%.4f  MaxLoss=%.1f%%",
+                        g_startBalance, g_stopLevel, tradingCapital, tradingRatio, maxLossPercent));
+}
+
+//+------------------------------------------------------------------+
+//|  Проверка месячного стоп-уровня — вызывается в OnTick()          |
+//|                                                                  |
+//|  Возвращает false если EA должен заблокировать новые сделки      |
+//|  Открытые позиции НЕ закрываются (SL/TP брокера их защищают)     |
+//|  После остановки требуется ручной перезапуск EA                  |
+//+------------------------------------------------------------------+
+bool CheckMonthlyStopLevel()
+{
+   if(g_stopLevel <= 0.0)
+      return true;   // Не инициализирован — пропускаем
+
+   if(g_stopLevelReached)
+      return false;  // Уже достигнут — блокируем навсегда до перезапуска
+
+   double currentBalance = AccountInfoDouble(ACCOUNT_BALANCE);
+
+   // Предупреждение при прохождении 90% пути от StartBalance до StopLevel
+   if(!g_stopLevelWarned && currentBalance > g_stopLevel)
+   {
+      double warningLevel = g_stopLevel + (g_startBalance - g_stopLevel) * 0.10;
+      if(currentBalance <= warningLevel)
+      {
+         g_stopLevelWarned = true;
+         AlertStopLevelApproaching(currentBalance, g_stopLevel);
+      }
+   }
+
+   if(currentBalance <= g_stopLevel)
+   {
+      g_stopLevelReached = true;
+      // Инвалидируем GV дату — на следующем запуске EA возьмёт AccountBalance() как новый StartBalance,
+      // а не восстановит старый, при котором стоп снова немедленно сработает
+      GlobalVariableSet("ORB_START_BAL_DATE", 0.0);
+      AlertStopLevelReached(currentBalance, g_stopLevel);
+      return false;
+   }
+
+   return true;
 }
 
 //+------------------------------------------------------------------+
