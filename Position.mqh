@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //|                                                     Position.mqh |
-//|           TSLA Pre-Market ORB Level Break EA — v1.5              |
+//|           TSLA Pre-Market ORB Level Break EA — v1.9              |
 //|           Модуль: управление позицией (BE, TP-коррекция, EOD)    |
 //|                                                                  |
 //|  Функции:                                                        |

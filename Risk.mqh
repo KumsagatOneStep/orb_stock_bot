@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //|                                                         Risk.mqh |
-//|           TSLA Pre-Market ORB Level Break EA — v1.5              |
+//|           TSLA Pre-Market ORB Level Break EA — v1.9              |
 //|           Модуль: расчёт лота, дневной лимит, сброс состояния    |
 //|                                                                  |
 //|  Функции:                                                        |
@@ -367,13 +367,11 @@ void InitRisk(int magic)
          if(t > 0 && PositionSelectByTicket(t) &&   // N3: select до MAGIC-фильтра — иначе g_beDone=true при старте
             (int)PositionGetInteger(POSITION_MAGIC) == magic)
          {
+            double posSL = PositionGetDouble(POSITION_SL);
+            if(entryPrice > 0.0 && MathAbs(posSL - entryPrice) < 0.001)
             {
-               double posSL = PositionGetDouble(POSITION_SL);
-               if(entryPrice > 0.0 && MathAbs(posSL - entryPrice) < 0.001)
-               {
-                  g_beDone = true;
-                  LogInfo("Синхронизация BE: SL == EntryPrice → BE_DONE=true");
-               }
+               g_beDone = true;
+               LogInfo("Синхронизация BE: SL == EntryPrice → BE_DONE=true");
             }
             break;
          }

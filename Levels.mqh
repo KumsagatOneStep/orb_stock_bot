@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //|                                                       Levels.mqh |
-//|           TSLA Pre-Market ORB Level Break EA — v1.6              |
+//|           TSLA Pre-Market ORB Level Break EA — v1.9              |
 //|           Модуль: фиксация уровней PRE_HIGH / PRE_LOW            |
 //|                                                                  |
 //|  Логика:                                                         |
@@ -67,7 +67,10 @@ void CalcDynamicParams(double currentPrice, double basePrice)
    g_dynBreakeven    = NormalizeDouble(1.50 * ratio, 2);
    g_dynTP           = NormalizeDouble(6.00 * ratio, 2);
    g_dynReady        = true;
-   GlobalVariableSet("ORB_BREAKEVEN", g_dynBreakeven);
+   GlobalVariableSet("ORB_ENTRY_OFFSET", g_dynEntryOffset);
+   GlobalVariableSet("ORB_STOP_LOSS",    g_dynEntryOffset);   // SL == EntryOffset по дизайну
+   GlobalVariableSet("ORB_BREAKEVEN",    g_dynBreakeven);
+   GlobalVariableSet("ORB_TAKE_PROFIT",  g_dynTP);
    LogInfo(StringFormat("Dynamic params | Price=$%.2f  Entry=$%.2f  BE=$%.2f  TP=$%.2f  Ratio=%.4f",
                          currentPrice, g_dynEntryOffset, g_dynBreakeven, g_dynTP, ratio));
 }
@@ -386,12 +389,15 @@ void ResetLevels()
    g_dynReady       = false;
    g_lotSize        = 0.0;
 
-   GlobalVariableSet("ORB_PRE_HIGH",    0.0);
-   GlobalVariableSet("ORB_PRE_LOW",     0.0);
-   GlobalVariableSet("ORB_CLOSE_PRICE", 0.0);
-   GlobalVariableSet("ORB_LOT_SIZE",    0.0);
-   GlobalVariableSet("ORB_BREAKEVEN",   0.0);
-   GlobalVariableSet("ORB_STATE",       (double)STATE_WAITING);
+   GlobalVariableSet("ORB_PRE_HIGH",     0.0);
+   GlobalVariableSet("ORB_PRE_LOW",      0.0);
+   GlobalVariableSet("ORB_CLOSE_PRICE",  0.0);
+   GlobalVariableSet("ORB_LOT_SIZE",     0.0);
+   GlobalVariableSet("ORB_ENTRY_OFFSET", 0.0);
+   GlobalVariableSet("ORB_STOP_LOSS",    0.0);
+   GlobalVariableSet("ORB_BREAKEVEN",    0.0);
+   GlobalVariableSet("ORB_TAKE_PROFIT",  0.0);
+   GlobalVariableSet("ORB_STATE",        (double)STATE_WAITING);
 
    LogInfo("Уровни сброшены — начало нового торгового дня");
 }

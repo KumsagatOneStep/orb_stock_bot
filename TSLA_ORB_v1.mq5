@@ -189,10 +189,6 @@ void OnTick()
    if(g_eaState != STATE_LEVELS_SET)
       return;
 
-   //--- 6a. Дневной лимит убытка (раздел 5.2)
-   if(!CheckDailyLoss(InpMaxDailyLossPercent))
-      return;
-
    //--- 6b. Управление флагом первого тика в окне входа (gap-детектор)
    bool nowInWindow = IsInEntryWindow(InpETOffset);
    if(nowInWindow && !g_inEntryWindow)
@@ -265,6 +261,12 @@ void OnTimer()
    if(g_eaState == STATE_IN_TRADE || PositionsTotalByMagic(InpMagic) > 0)
    {
       CheckPositionClosed(InpSymbol, InpMagic);
+      if(g_eaState == STATE_IN_TRADE)
+      {
+         double activeBEThreshold = (InpUseDynamicParams && g_dynReady)
+                                    ? g_dynBreakeven : InpBreakevenThreshold;
+         CheckBreakeven(InpSymbol, InpMagic, activeBEThreshold);
+      }
       CheckEodClose(InpSymbol, InpMagic, InpETOffset);
    }
    else
