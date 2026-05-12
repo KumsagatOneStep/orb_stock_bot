@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //|                                               TSLA_ORB_v1.mq5   |
-//|           TSLA Pre-Market ORB Level Break EA — v1.8              |
+//|           TSLA Pre-Market ORB Level Break EA — v1.9              |
 //|                                                                  |
 //|  Стратегия: пробой уровней последней 5M свечи премаркета         |
 //|  Свеча:     09:25–09:30 ET (13:25–13:30 / 14:25–14:30 UTC)      |
@@ -8,8 +8,8 @@
 //|  EOD:       15:55 ET принудительное закрытие                     |
 //|  Брокер:    Exness MT5, Hedging, ContractSize=100                 |
 //+------------------------------------------------------------------+
-#property copyright "TSLA ORB EA v1.8"
-#property version   "1.80"
+#property copyright "TSLA ORB EA v1.9"
+#property version   "1.90"
 
 #include "Logger.mqh"
 #include "Levels.mqh"
@@ -136,6 +136,7 @@ void OnDeinit(const int reason)
 void OnTick()
 {
    //--- 0a. Месячный стоп-уровень (v1.7): блокируем новые сделки навсегда до перезапуска
+   //        EOD-закрытие открытых позиций продолжает работать через OnTimer независимо
    if(!CheckMonthlyStopLevel())
       return;
 
@@ -161,6 +162,10 @@ void OnTick()
    if(g_eaState == STATE_DISABLED_TODAY)
       return;
 
+   //--- 3a. Активный порог Breakeven: динамический (v1.9) или фиксированный
+   double activeBEThreshold = (InpUseDynamicParams && g_dynReady)
+                              ? g_dynBreakeven : InpBreakevenThreshold;
+
    //--- 4. Управление открытой позицией
    if(g_eaState == STATE_IN_TRADE || PositionsTotalByMagic(InpMagic) > 0)
    {
@@ -169,7 +174,7 @@ void OnTick()
 
       // 4b. Breakeven (однократно, только если позиция ещё открыта)
       if(g_eaState == STATE_IN_TRADE)
-         CheckBreakeven(InpSymbol, InpMagic, InpBreakevenThreshold);
+         CheckBreakeven(InpSymbol, InpMagic, activeBEThreshold);
 
       // 4c. EOD принудительное закрытие в 15:55 ET
       CheckEodClose(InpSymbol, InpMagic, InpETOffset);
@@ -263,7 +268,12 @@ void OnTimer()
       CheckEodClose(InpSymbol, InpMagic, InpETOffset);
    }
    else
+   {
+      // БАГ 1 FIX: фиксируем уровни через таймер если тик в минуту 13:30 не пришёл
+      ProcessLevelTick(InpSymbol, InpETOffset, InpUseDynamicParams,
+                       InpBasePrice, InpTradingRatio, InpLeverage);
       CheckEntryWindowExpiry(InpETOffset);
+   }
 }
 
 //+------------------------------------------------------------------+

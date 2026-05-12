@@ -38,6 +38,7 @@ bool          g_levelsFixed    = false;         // Флаг однократно
 // Динамические параметры (v1.6) — масштабируются от цены ORB-свечи
 double        g_dynEntryOffset = 0.0;           // EntryOffset = SL-дистанция (dynamic)
 double        g_dynTP          = 0.0;           // TakeProfit-дистанция (dynamic)
+double        g_dynBreakeven   = 0.0;           // BreakevenThreshold (dynamic, v1.9)
 bool          g_dynReady       = false;         // Флаг: динамические параметры вычислены
 double        g_lotSize        = 0.0;           // Лот, рассчитанный из ORB-цены × плечо (v1.8)
 
@@ -61,12 +62,14 @@ int GetOrbCandleHour(int etOffset)
 //+------------------------------------------------------------------+
 void CalcDynamicParams(double currentPrice, double basePrice)
 {
-   double ratio     = currentPrice / basePrice;
-   g_dynEntryOffset = NormalizeDouble(0.50 * ratio, 2);
-   g_dynTP          = NormalizeDouble(6.00 * ratio, 2);
-   g_dynReady       = true;
-   LogInfo(StringFormat("Dynamic params | Price=$%.2f  EntryOffset=$%.2f  TP=$%.2f  Ratio=%.4f",
-                         currentPrice, g_dynEntryOffset, g_dynTP, currentPrice / basePrice));
+   double ratio      = currentPrice / basePrice;
+   g_dynEntryOffset  = NormalizeDouble(0.50 * ratio, 2);
+   g_dynBreakeven    = NormalizeDouble(1.50 * ratio, 2);
+   g_dynTP           = NormalizeDouble(6.00 * ratio, 2);
+   g_dynReady        = true;
+   GlobalVariableSet("ORB_BREAKEVEN", g_dynBreakeven);
+   LogInfo(StringFormat("Dynamic params | Price=$%.2f  Entry=$%.2f  BE=$%.2f  TP=$%.2f  Ratio=%.4f",
+                         currentPrice, g_dynEntryOffset, g_dynBreakeven, g_dynTP, ratio));
 }
 
 //+------------------------------------------------------------------+
@@ -378,6 +381,7 @@ void ResetLevels()
    g_eaState        = STATE_WAITING;
    g_levelsFixed    = false;
    g_dynEntryOffset = 0.0;
+   g_dynBreakeven   = 0.0;
    g_dynTP          = 0.0;
    g_dynReady       = false;
    g_lotSize        = 0.0;
@@ -386,6 +390,7 @@ void ResetLevels()
    GlobalVariableSet("ORB_PRE_LOW",     0.0);
    GlobalVariableSet("ORB_CLOSE_PRICE", 0.0);
    GlobalVariableSet("ORB_LOT_SIZE",    0.0);
+   GlobalVariableSet("ORB_BREAKEVEN",   0.0);
    GlobalVariableSet("ORB_STATE",       (double)STATE_WAITING);
 
    LogInfo("Уровни сброшены — начало нового торгового дня");

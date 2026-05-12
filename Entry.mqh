@@ -45,11 +45,13 @@ void UpdateLevelAFlags(double ask, double bid)
    if(!g_levelALong && ask >= g_preHigh)
    {
       g_levelALong = true;
+      GlobalVariableSet("ORB_LEVEL_A_LONG", 1.0);   // БАГ 3 FIX: сохраняем для рестарта в окне входа
       LogInfo(StringFormat("LEVEL_A_LONG | Ask=%.2f >= PRE_HIGH=%.2f", ask, g_preHigh));
    }
    if(!g_levelAShort && bid <= g_preLow)
    {
       g_levelAShort = true;
+      GlobalVariableSet("ORB_LEVEL_A_SHORT", 1.0);  // БАГ 3 FIX
       LogInfo(StringFormat("LEVEL_A_SHORT | Bid=%.2f <= PRE_LOW=%.2f", bid, g_preLow));
    }
 }
@@ -62,8 +64,10 @@ bool IsGapTick(double ask, double bid, double longEntry, double shortEntry)
    if(ask >= longEntry && bid <= shortEntry)
    {
       AlertGapDetected();
-      g_eaState = STATE_DISABLED_TODAY;
-      GlobalVariableSet("ORB_STATE", (double)STATE_DISABLED_TODAY);
+      g_eaState        = STATE_DISABLED_TODAY;
+      g_dailyTradeDone = true;                           // БАГ A FIX: gap-фильтр должен блокировать как и любой вход
+      GlobalVariableSet("ORB_STATE",      (double)STATE_DISABLED_TODAY);
+      GlobalVariableSet("ORB_TRADE_DONE", 1.0);          // БАГ A FIX: иначе при рестарте gvIsToday=true читает 0 → вход разрешён
       return true;
    }
    return false;
@@ -235,7 +239,7 @@ ulong ProcessEntryTick(string symbol,
       if(!CheckDailyLoss(maxDailyLossPercent))
          return 0;
 
-      double sl      = ask - entryOffset;   // BUG D: SL точно на entryOffset от цены входа, не от уровня ORB
+      double sl      = ask - entryOffset;   // SL на фиксированной дистанции от цены входа — сохраняет R:R=12:1
       double tpPrelim = ask + takeProfit;
 
       LogInfo(StringFormat("LONG-триггер | Ask=%.2f >= %.2f | SL=%.2f",
@@ -261,7 +265,7 @@ ulong ProcessEntryTick(string symbol,
       if(!CheckDailyLoss(maxDailyLossPercent))   // FIX BUG 2
          return 0;
 
-      double sl      = bid + entryOffset;   // BUG D: SL точно на entryOffset от цены входа, не от уровня ORB
+      double sl      = bid + entryOffset;   // SL на фиксированной дистанции от цены входа — сохраняет R:R=12:1
       double tpPrelim = bid - takeProfit;
 
       LogInfo(StringFormat("SHORT-триггер | Bid=%.2f <= %.2f | SL=%.2f",

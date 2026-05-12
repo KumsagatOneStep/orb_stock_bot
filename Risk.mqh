@@ -140,10 +140,16 @@ void ResetDailyState(int magic)
    g_eodCloseAttempts  = 0;
 
    // Сбрасываем GlobalVariables (раздел 5.2, 6.2)
-   GlobalVariableSet("ORB_TRADE_DONE",  0.0);
-   GlobalVariableSet("ORB_BE_DONE",     0.0);
-   GlobalVariableSet("ORB_ENTRY_PRICE", 0.0);
-   GlobalVariableSet("ORB_LAST_DATE",   (double)(long)TimeTradeServer());
+   GlobalVariableSet("ORB_TRADE_DONE",    0.0);
+   GlobalVariableSet("ORB_BE_DONE",       0.0);
+   GlobalVariableSet("ORB_ENTRY_PRICE",   0.0);
+   GlobalVariableSet("ORB_LEVEL_A_LONG",  0.0);   // БАГ 3 FIX
+   GlobalVariableSet("ORB_LEVEL_A_SHORT", 0.0);   // БАГ 3 FIX
+   // БАГ 6 FIX: пишем полночь (совпадает с форматом CheckNewDay) для корректного gvIsToday
+   MqlDateTime midnightStruct;
+   TimeToStruct(TimeTradeServer(), midnightStruct);
+   midnightStruct.hour = 0; midnightStruct.min = 0; midnightStruct.sec = 0;
+   GlobalVariableSet("ORB_LAST_DATE", (double)(long)StructToTime(midnightStruct));
 
    // Сбрасываем уровни через Levels.mqh
    ResetLevels();
@@ -200,7 +206,8 @@ void InitMonthlyRisk(double startBalanceParam, double maxLossPercent, double tra
    nowStruct.hour = 0; nowStruct.min = 0; nowStruct.sec = 0;
    datetime today = StructToTime(nowStruct);
 
-   double startBalance = startBalanceParam;
+   double startBalance    = startBalanceParam;
+   bool   samePeriodFromGV = false;   // true если startBalance восстановлен из GV того же периода
 
    if(startBalance <= 0.0)
    {
@@ -211,7 +218,8 @@ void InitMonthlyRisk(double startBalanceParam, double maxLossPercent, double tra
          datetime savedDay   = (datetime)(long)GlobalVariableGet("ORB_START_BAL_DATE");
          if(savedBalance > 0.0 && savedDay == today)
          {
-            startBalance = savedBalance;
+            startBalance    = savedBalance;
+            samePeriodFromGV = true;
             LogInfo(StringFormat("StartBalance восстановлен из GV: %.2f", startBalance));
          }
       }
@@ -232,10 +240,23 @@ void InitMonthlyRisk(double startBalanceParam, double maxLossPercent, double tra
    GlobalVariableSet("ORB_START_BALANCE",  g_startBalance);
    GlobalVariableSet("ORB_START_BAL_DATE", (double)(long)today);
 
+   // БАГ B FIX: ORB_STOP_WARNED восстанавливаем только если это тот же торговый период.
+   // При новом периоде (новый StartBalance) флаг должен сброситься — иначе предупреждение
+   // о приближении к стоп-уровню не будет отправлено никогда в новом периоде.
+   if(samePeriodFromGV && GlobalVariableCheck("ORB_STOP_WARNED"))
+      g_stopLevelWarned = (GlobalVariableGet("ORB_STOP_WARNED") > 0.5);
+   else
+   {
+      g_stopLevelWarned = false;
+      GlobalVariableSet("ORB_STOP_WARNED",  0.0);
+      GlobalVariableSet("ORB_STOP_REACHED", 0.0);   // новый период — сбрасываем и алерт-флаг
+   }
+
    double tradingCapital = AccountInfoDouble(ACCOUNT_BALANCE) * tradingRatio;
    LogInfo(StringFormat("Месячный риск | StartBalance=%.2f  StopLevel=%.2f  "
-                        "TradingCapital=%.2f  TradingRatio=%.4f  MaxLoss=%.1f%%",
-                        g_startBalance, g_stopLevel, tradingCapital, tradingRatio, maxLossPercent));
+                        "TradingCapital=%.2f  TradingRatio=%.4f  MaxLoss=%.1f%%  Warned=%s",
+                        g_startBalance, g_stopLevel, tradingCapital, tradingRatio, maxLossPercent,
+                        g_stopLevelWarned ? "true" : "false"));
 }
 
 //+------------------------------------------------------------------+
@@ -262,6 +283,7 @@ bool CheckMonthlyStopLevel()
       if(currentBalance <= warningLevel)
       {
          g_stopLevelWarned = true;
+         GlobalVariableSet("ORB_STOP_WARNED", 1.0);   // БАГ 5 FIX: сохраняем для рестарта
          AlertStopLevelApproaching(currentBalance, g_stopLevel);
       }
    }
@@ -272,7 +294,15 @@ bool CheckMonthlyStopLevel()
       // Инвалидируем GV дату — на следующем запуске EA возьмёт AccountBalance() как новый StartBalance,
       // а не восстановит старый, при котором стоп снова немедленно сработает
       GlobalVariableSet("ORB_START_BAL_DATE", 0.0);
-      AlertStopLevelReached(currentBalance, g_stopLevel);
+      // БАГ C FIX: ORB_STOP_REACHED подавляет дублирующий алерт при рестарте.
+      // Флаг сбрасывается в InitMonthlyRisk при новом периоде (samePeriodFromGV=false).
+      bool alreadyNotified = (GlobalVariableCheck("ORB_STOP_REACHED") &&
+                              GlobalVariableGet("ORB_STOP_REACHED") > 0.5);
+      if(!alreadyNotified)
+      {
+         GlobalVariableSet("ORB_STOP_REACHED", 1.0);
+         AlertStopLevelReached(currentBalance, g_stopLevel);
+      }
       return false;
    }
 
@@ -292,16 +322,39 @@ void InitRisk(int magic)
    MqlDateTime nowStruct;
    TimeToStruct(TimeTradeServer(), nowStruct);
    nowStruct.hour = 0; nowStruct.min = 0; nowStruct.sec = 0;
-   g_lastTradeDate = StructToTime(nowStruct);
+   datetime today = StructToTime(nowStruct);
+   g_lastTradeDate = today;
 
-   // Восстанавливаем дневные флаги из GlobalVariables (раздел 7.3)
-   if(GlobalVariableCheck("ORB_TRADE_DONE"))
-      g_dailyTradeDone = (GlobalVariableGet("ORB_TRADE_DONE") > 0.5);
+   // БАГ 2 FIX: восстанавливаем дневные флаги только если GV актуальны для СЕГОДНЯ.
+   // Без этой проверки GV от вчера (EA остановился до полуночи) блокировали торговлю:
+   // g_dailyTradeDone=true читался из устаревшего ORB_TRADE_DONE=1, а CheckNewDay
+   // не срабатывал т.к. g_lastTradeDate уже установлен в today.
+   bool gvIsToday = false;
+   if(GlobalVariableCheck("ORB_LAST_DATE"))
+   {
+      datetime savedDate = (datetime)(long)GlobalVariableGet("ORB_LAST_DATE");
+      gvIsToday = (savedDate == today);
+   }
 
-   if(GlobalVariableCheck("ORB_BE_DONE"))
-      g_beDone = (GlobalVariableGet("ORB_BE_DONE") > 0.5);
+   if(gvIsToday)
+   {
+      if(GlobalVariableCheck("ORB_TRADE_DONE"))
+         g_dailyTradeDone = (GlobalVariableGet("ORB_TRADE_DONE") > 0.5);
+
+      if(GlobalVariableCheck("ORB_BE_DONE"))
+         g_beDone = (GlobalVariableGet("ORB_BE_DONE") > 0.5);
+
+      // БАГ 3 FIX: восстанавливаем LEVEL_A флаги (теряются при рестарте в окне входа)
+      if(GlobalVariableCheck("ORB_LEVEL_A_LONG"))
+         g_levelALong = (GlobalVariableGet("ORB_LEVEL_A_LONG") > 0.5);
+
+      if(GlobalVariableCheck("ORB_LEVEL_A_SHORT"))
+         g_levelAShort = (GlobalVariableGet("ORB_LEVEL_A_SHORT") > 0.5);
+   }
+   // Если GV устарели — все флаги остаются false (default), торговля разрешена
 
    // FIX BUG 4: явный выбор позиции перед PositionGetDouble
+   // EntryPrice восстанавливаем при наличии живой позиции (не зависит от даты GV)
    if(PositionsTotalByMagic(magic) > 0)
    {
       double entryPrice = GlobalVariableCheck("ORB_ENTRY_PRICE")
@@ -327,11 +380,14 @@ void InitRisk(int magic)
       }
    }
 
-   LogInfo(StringFormat("Risk-модуль инициализирован | "
-                        "Баланс дня: %.2f  TradeDone=%s  BeDone=%s",
+   LogInfo(StringFormat("Risk-модуль инициализирован | GV=%s  "
+                        "Баланс дня: %.2f  TradeDone=%s  BeDone=%s  LevelA=%s/%s",
+                        gvIsToday ? "сегодня" : "устарели",
                         g_dayStartBalance,
                         g_dailyTradeDone ? "true" : "false",
-                        g_beDone         ? "true" : "false"));
+                        g_beDone         ? "true" : "false",
+                        g_levelALong     ? "L" : "-",
+                        g_levelAShort    ? "S" : "-"));
 }
 
 //+------------------------------------------------------------------+
