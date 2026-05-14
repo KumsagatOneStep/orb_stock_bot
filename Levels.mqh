@@ -102,10 +102,12 @@ void CalcOrbLot(string symbol, double orbPrice, double tradingRatio, double leve
    // Округление вниз до шага 0.01
    lotSize = MathFloor(lotSize / 0.01) * 0.01;
 
-   if(lotSize > 10.0)
+   double maxLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
+   if(maxLot <= 0.0) maxLot = 10.0;   // fallback если брокер не вернул лимит
+   if(lotSize > maxLot)
    {
-      LogWarning(StringFormat("LotSize %.2f превышает MaxLot=10.00 — обрезан", lotSize));
-      lotSize = 10.0;
+      LogWarning(StringFormat("LotSize %.2f превышает MaxLot=%.2f — обрезан", lotSize, maxLot));
+      lotSize = maxLot;
    }
    lotSize = MathMax(lotSize, 0.01);
 
@@ -233,7 +235,7 @@ bool FixLevelsFromHistory(string symbol, int etOffset,
 //|  Используется при переподключении или позднем старте             |
 //|  Возвращает true если значения в GV валидны                      |
 //+------------------------------------------------------------------+
-bool RestoreLevelsFromGV(bool useDynamic = false, double basePrice = 400.0,
+bool RestoreLevelsFromGV(string symbol, bool useDynamic = false, double basePrice = 400.0,
                          double tradingRatio = 0.7143, double leverage = 20.0)
 {
    if(!GlobalVariableCheck("ORB_PRE_HIGH") || !GlobalVariableCheck("ORB_PRE_LOW"))
@@ -308,7 +310,7 @@ void InitLevels(string symbol, int etOffset, bool hasOpenPosition,
    //--- Сценарий A: есть открытая позиция → восстанавливаем и продолжаем мониторинг
    if(hasOpenPosition)
    {
-      if(!RestoreLevelsFromGV(useDynamic, basePrice, tradingRatio, leverage))
+      if(!RestoreLevelsFromGV(symbol, useDynamic, basePrice, tradingRatio, leverage))
          FixLevelsFromHistory(symbol, etOffset, useDynamic, basePrice, tradingRatio, leverage);
 
       g_eaState = STATE_IN_TRADE;
@@ -336,7 +338,7 @@ void InitLevels(string symbol, int etOffset, bool hasOpenPosition,
                            "восстановление уровней",
                            now.hour, now.min));
 
-      if(!RestoreLevelsFromGV(useDynamic, basePrice, tradingRatio, leverage))
+      if(!RestoreLevelsFromGV(symbol, useDynamic, basePrice, tradingRatio, leverage))
          FixLevelsFromHistory(symbol, etOffset, useDynamic, basePrice, tradingRatio, leverage);
       else
          g_eaState = STATE_LEVELS_SET;
