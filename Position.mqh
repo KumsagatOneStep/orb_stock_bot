@@ -229,14 +229,7 @@ bool CheckEodClose(string symbol, int magic, int etOffset)
          req.type  = ORDER_TYPE_BUY;
          req.price = SymbolInfoDouble(symbol, SYMBOL_ASK);
       }
-      // Динамический режим: IOC предпочтительнее FOK для закрытия (допускает частичное исполнение)
-      int fillModes = (int)SymbolInfoInteger(symbol, SYMBOL_FILLING_MODE);
-      if((fillModes & SYMBOL_FILLING_IOC) != 0)
-         req.type_filling = ORDER_FILLING_IOC;
-      else if((fillModes & SYMBOL_FILLING_FOK) != 0)
-         req.type_filling = ORDER_FILLING_FOK;
-      else
-         req.type_filling = ORDER_FILLING_RETURN;
+      req.type_filling = GetFillingModeClose(symbol);
 
       if(OrderSend(req, res) &&
          (res.retcode == TRADE_RETCODE_DONE || res.retcode == TRADE_RETCODE_PLACED))

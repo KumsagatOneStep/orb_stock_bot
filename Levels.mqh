@@ -402,4 +402,52 @@ void ResetLevels()
    LogInfo("Уровни сброшены — начало нового торгового дня");
 }
 
+//+------------------------------------------------------------------+
+//|  Вспомогательная: N-е вхождение дня недели в месяце              |
+//|  dayOfWeek: 0=вс, 1=пн … 6=сб (формат MQL5)                     |
+//+------------------------------------------------------------------+
+datetime FindNthWeekday(int year, int month, int n, int dayOfWeek)
+{
+   MqlDateTime dt = {};
+   dt.year = year;
+   dt.mon  = month;
+   dt.day  = 1;
+   datetime firstDay = StructToTime(dt);
+   MqlDateTime fdStruct;
+   TimeToStruct(firstDay, fdStruct);
+   int shift = (dayOfWeek - fdStruct.day_of_week + 7) % 7;
+   dt.day    = 1 + shift + (n - 1) * 7;
+   return StructToTime(dt);
+}
+
+//+------------------------------------------------------------------+
+//|  Автоматическое определение смещения ET относительно UTC          |
+//|  EDT (−4): 2-е вс марта 07:00 UTC → 1-е вс ноября 06:00 UTC     |
+//|  EST (−5): всё остальное время                                    |
+//+------------------------------------------------------------------+
+int CalcUSETOffset(datetime serverUTC)
+{
+   MqlDateTime dt;
+   TimeToStruct(serverUTC, dt);
+   int year = dt.year;
+
+   datetime dstStart = FindNthWeekday(year,  3, 2, 0) + 7 * 3600;  // 2-е вс марта, 07:00 UTC
+   datetime dstEnd   = FindNthWeekday(year, 11, 1, 0) + 6 * 3600;  // 1-е вс ноября, 06:00 UTC
+
+   return (serverUTC >= dstStart && serverUTC < dstEnd) ? -4 : -5;
+}
+
+//+------------------------------------------------------------------+
+//|  Режим заполнения ордера для закрытия позиции                    |
+//|  IOC предпочтительнее FOK: допускает частичное исполнение,       |
+//|  что надёжнее при EOD-закрытии на узком рынке                    |
+//+------------------------------------------------------------------+
+ENUM_ORDER_TYPE_FILLING GetFillingModeClose(string symbol)
+{
+   int modes = (int)SymbolInfoInteger(symbol, SYMBOL_FILLING_MODE);
+   if((modes & SYMBOL_FILLING_IOC) != 0) return ORDER_FILLING_IOC;
+   if((modes & SYMBOL_FILLING_FOK) != 0) return ORDER_FILLING_FOK;
+   return ORDER_FILLING_RETURN;
+}
+
 #endif // LEVELS_MQH

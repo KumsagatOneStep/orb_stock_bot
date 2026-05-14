@@ -27,7 +27,8 @@ input double   InpTakeProfit          = 6.00;       // TP в USD от цены �
 input double   InpBreakevenThreshold  = 1.50;       // Движение для переноса SL в BE ($)
 input int      InpMaxSlippage         = 30;         // Макс. слиппаж в пунктах
 input int      InpRetryDelay          = 500;        // Задержка повтора в мс
-input int      InpETOffset            = -4;         // Смещение ET: лето=-4, зима=-5
+input int      InpETOffset            = -4;         // Смещение ET вручную (если AutoDST=false)
+input bool     InpAutoDST             = true;       // Авто-определение летнего/зимнего ET (US DST)
 input double   InpMaxDailyLossPercent = 2.0;        // Дневной лимит убытка (0=откл.)
 input double   InpMaxDrawdownPercent  = 0.0;        // Макс. просадка (0=откл.)
 // --- Месячный риск-менеджмент (v1.7) ---
@@ -49,6 +50,14 @@ input ENUM_LOG_LEVEL InpLogLevel      = LOG_INFO;   // Уровень детал
 double   g_initialBalance    = 0.0;    // Баланс на момент запуска EA (для MaxDrawdown)
 bool     g_firstEntryTick    = true;   // Флаг первого тика в окне входа (gap-детектор)
 bool     g_inEntryWindow     = false;  // Текущий статус: находимся в окне входа
+int      g_etOffset          = -4;     // Эффективное смещение ET: обновляется при запуске и смене дня
+
+void UpdateETOffset()
+{
+   g_etOffset = InpAutoDST ? CalcUSETOffset(TimeTradeServer()) : InpETOffset;
+   LogInfo(StringFormat("ET смещение: %+d (%s)",
+                         g_etOffset, g_etOffset == -4 ? "EDT (лето)" : "EST (зима)"));
+}
 
 //+------------------------------------------------------------------+
 //|  OnInit — инициализация EA                                       |
@@ -78,15 +87,16 @@ int OnInit()
    //--- 5. Инициализация модуля позиции (восстановление EntryPrice, BE)
    InitPosition(InpMagic);
 
-   //--- 6. Инициализация модуля уровней (сценарии позднего запуска 7.4)
+   //--- 6. Определение смещения ET + инициализация модуля уровней (сценарии позднего запуска 7.4)
+   UpdateETOffset();
    bool hasPosition = (PositionsTotalByMagic(InpMagic) > 0);
-   InitLevels(InpSymbol, InpETOffset, hasPosition, InpUseDynamicParams, InpBasePrice,
+   InitLevels(InpSymbol, g_etOffset, hasPosition, InpUseDynamicParams, InpBasePrice,
               InpTradingRatio, InpLeverage);
 
    //--- 7. Информационный лог запуска
    LogInfo(StringFormat("EA запущен | Инструмент=%s  Баланс=%.2f  "
                          "Leverage=1:%.0f  TradingRatio=%.4f  DynParams=%s(Base=$%.2f)  "
-                         "EntryOffset=%.2f  TP=%.2f  BE=%.2f  ETOffset=%d  Magic=%d  "
+                         "EntryOffset=%.2f  TP=%.2f  BE=%.2f  ETOffset=%+d  AutoDST=%s  Magic=%d  "
                          "StartBalance=%.2f  StopLevel=%.2f  TradingCapital=%.2f",
                          InpSymbol,
                          g_initialBalance,
@@ -97,7 +107,8 @@ int OnInit()
                          InpEntryOffset,
                          InpTakeProfit,
                          InpBreakevenThreshold,
-                         InpETOffset,
+                         g_etOffset,
+                         InpAutoDST ? "ON" : "OFF",
                          InpMagic,
                          g_startBalance,
                          g_stopLevel,
@@ -152,10 +163,11 @@ void OnTick()
    {
       g_inEntryWindow  = false;
       g_firstEntryTick = true;
+      UpdateETOffset();
    }
 
    //--- 2. Фиксация ORB-уровней в момент закрытия свечи 09:25–09:30 ET
-   ProcessLevelTick(InpSymbol, InpETOffset, InpUseDynamicParams, InpBasePrice,
+   ProcessLevelTick(InpSymbol, g_etOffset, InpUseDynamicParams, InpBasePrice,
                     InpTradingRatio, InpLeverage);
 
    //--- 3. Нет смысла продолжать если советник отключён на сегодня
@@ -177,20 +189,20 @@ void OnTick()
          CheckBreakeven(InpSymbol, InpMagic, activeBEThreshold);
 
       // 4c. EOD принудительное закрытие в 15:55 ET
-      CheckEodClose(InpSymbol, InpMagic, InpETOffset);
+      CheckEodClose(InpSymbol, InpMagic, g_etOffset);
 
       return;
    }
 
    //--- 5. Проверка истечения окна входа (раздел 4.3)
-   CheckEntryWindowExpiry(InpETOffset);
+   CheckEntryWindowExpiry(g_etOffset);
 
    //--- 6. Логика входа (только если уровни зафиксированы)
    if(g_eaState != STATE_LEVELS_SET)
       return;
 
    //--- 6b. Управление флагом первого тика в окне входа (gap-детектор)
-   bool nowInWindow = IsInEntryWindow(InpETOffset);
+   bool nowInWindow = IsInEntryWindow(g_etOffset);
    if(nowInWindow && !g_inEntryWindow)
    {
       // Вошли в окно входа — следующий тик будет первым
@@ -222,7 +234,7 @@ void OnTick()
    //--- 6e. Попытка входа
    // FIX BUG 2: передаём InpMaxDailyLossPercent в ProcessEntryTick
    ulong ticket = ProcessEntryTick(InpSymbol,
-                                    InpETOffset,
+                                    g_etOffset,
                                     activeEntryOffset,
                                     lot,
                                     activeTakeProfit,
@@ -256,6 +268,7 @@ void OnTimer()
    {
       g_inEntryWindow  = false;
       g_firstEntryTick = true;
+      UpdateETOffset();
    }
 
    if(g_eaState == STATE_IN_TRADE || PositionsTotalByMagic(InpMagic) > 0)
@@ -267,14 +280,14 @@ void OnTimer()
                                     ? g_dynBreakeven : InpBreakevenThreshold;
          CheckBreakeven(InpSymbol, InpMagic, activeBEThreshold);
       }
-      CheckEodClose(InpSymbol, InpMagic, InpETOffset);
+      CheckEodClose(InpSymbol, InpMagic, g_etOffset);
    }
    else
    {
       // БАГ 1 FIX: фиксируем уровни через таймер если тик в минуту 13:30 не пришёл
-      ProcessLevelTick(InpSymbol, InpETOffset, InpUseDynamicParams,
+      ProcessLevelTick(InpSymbol, g_etOffset, InpUseDynamicParams,
                        InpBasePrice, InpTradingRatio, InpLeverage);
-      CheckEntryWindowExpiry(InpETOffset);
+      CheckEntryWindowExpiry(g_etOffset);
    }
 }
 
