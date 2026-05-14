@@ -77,10 +77,10 @@ void CalcDynamicParams(double currentPrice, double basePrice)
 
 //+------------------------------------------------------------------+
 //|  Расчёт лота через плечо от ORB-цены (v1.8)                     |
-//|  LotSize = (Balance × TradingRatio × Leverage) / (Price × 100)  |
-//|  Вызывается однократно при фиксации ORB-уровней                  |
+//|  LotSize = (Balance × TradingRatio × Leverage) / (Price × ContractSize)  |
+//|  Вызывается однократно при фиксации ORB-уровней                           |
 //+------------------------------------------------------------------+
-void CalcOrbLot(double orbPrice, double tradingRatio, double leverage)
+void CalcOrbLot(string symbol, double orbPrice, double tradingRatio, double leverage)
 {
    if(orbPrice <= 0.0 || tradingRatio <= 0.0 || leverage <= 0.0)
    {
@@ -88,9 +88,16 @@ void CalcOrbLot(double orbPrice, double tradingRatio, double leverage)
       return;
    }
 
+   double contractSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_CONTRACT_SIZE);
+   if(contractSize <= 0.0)
+   {
+      LogError(StringFormat("CalcOrbLot: ContractSize=%.0f — используем 100 как запасное значение", contractSize));
+      contractSize = 100.0;
+   }
+
    double balance        = AccountInfoDouble(ACCOUNT_BALANCE);
    double tradingCapital = balance * tradingRatio;
-   double lotSize        = (tradingCapital * leverage) / (orbPrice * 100.0);
+   double lotSize        = (tradingCapital * leverage) / (orbPrice * contractSize);
 
    // Округление вниз до шага 0.01
    lotSize = MathFloor(lotSize / 0.01) * 0.01;
@@ -106,9 +113,9 @@ void CalcOrbLot(double orbPrice, double tradingRatio, double leverage)
    GlobalVariableSet("ORB_LOT_SIZE", g_lotSize);
 
    LogInfo(StringFormat("Лот рассчитан: Balance=$%.2f  TradingCapital=$%.2f  "
-                        "Price=$%.2f  Leverage=1:%.0f  LotSize=%.2f  Акций=%.0f  Маржа=$%.2f",
-                        balance, tradingCapital, orbPrice, leverage,
-                        lotSize, MathRound(lotSize * 100.0), tradingCapital));
+                        "Price=$%.2f  ContractSize=%.0f  Leverage=1:%.0f  LotSize=%.2f  Акций=%.0f  Маржа=$%.2f",
+                        balance, tradingCapital, orbPrice, contractSize, leverage,
+                        lotSize, MathRound(lotSize * contractSize), tradingCapital));
 }
 
 //+------------------------------------------------------------------+
@@ -201,7 +208,7 @@ bool FixLevelsFromHistory(string symbol, int etOffset,
          CalcDynamicParams(orbPrice, basePrice);
 
       // v1.8: расчёт лота через плечо от цены ORB-свечи
-      CalcOrbLot(orbPrice, tradingRatio, leverage);
+      CalcOrbLot(symbol, orbPrice, tradingRatio, leverage);
    }
 
    // Сохраняем в GlobalVariables для восстановления после обрыва (раздел 7.3)
@@ -261,10 +268,10 @@ bool RestoreLevelsFromGV(bool useDynamic = false, double basePrice = 400.0,
                LogInfo(StringFormat("Лот восстановлен из GV: %.2f", g_lotSize));
             }
             else
-               CalcOrbLot(savedClose, tradingRatio, leverage);
+               CalcOrbLot(symbol, savedClose, tradingRatio, leverage);
          }
          else
-            CalcOrbLot(savedClose, tradingRatio, leverage);
+            CalcOrbLot(symbol, savedClose, tradingRatio, leverage);
       }
    }
 
