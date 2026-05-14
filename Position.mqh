@@ -190,7 +190,7 @@ bool CheckEodClose(string symbol, int magic, int etOffset)
    // Лето (ETOffset=-4): 19:55 UTC
    // Зима (ETOffset=-5): 20:55 UTC
    int eodHour = 15 - etOffset;   // 15 - (-4) = 19, 15 - (-5) = 20
-   int eodMin  = 55;
+   int eodMin  = 50;
 
    if(now.hour < eodHour) return false;
    if(now.hour == eodHour && now.min < eodMin) return false;
@@ -246,9 +246,18 @@ bool CheckEodClose(string symbol, int magic, int etOffset)
       }
       else
       {
-         g_eodCloseAttempts++;
-         LogError(StringFormat("EOD закрытие не удалось (попытка %d/%d): retcode=%d  ошибка=%d",
-                                g_eodCloseAttempts, EOD_MAX_ATTEMPTS, res.retcode, GetLastError()));
+         if(res.retcode == TRADE_RETCODE_MARKET_CLOSED)
+         {
+            // Биржа ещё закрыта — не считаем попытку, ждём следующего тика
+            LogWarning(StringFormat("EOD: биржа закрыта (10018), ожидаем открытия | попытка %d/%d",
+                                     g_eodCloseAttempts, EOD_MAX_ATTEMPTS));
+         }
+         else
+         {
+            g_eodCloseAttempts++;
+            LogError(StringFormat("EOD закрытие не удалось (попытка %d/%d): retcode=%d  ошибка=%d",
+                                   g_eodCloseAttempts, EOD_MAX_ATTEMPTS, res.retcode, GetLastError()));
+         }
       }
    }
 
@@ -355,6 +364,83 @@ void InitPosition(int magic)
                             g_entryPrice,
                             g_beDone ? "true" : "false"));
       break;
+   }
+}
+
+//+------------------------------------------------------------------+
+//|  Аварийное закрытие overnight — вызывается из OnTick()           |
+//|  Срабатывает если позиция осталась открытой после 00:00 UTC      |
+//|  (т.е. CheckEodClose не сработал — биржа была закрыта весь       |
+//|  вечерний период или EOD_MAX_ATTEMPTS исчерпаны досрочно)        |
+//+------------------------------------------------------------------+
+void CheckOvernightClose(string symbol, int magic)
+{
+   if(!g_positionWasOpen)
+      return;
+
+   MqlDateTime now;
+   TimeToStruct(TimeTradeServer(), now);
+
+   // Активируем только в ранние утренние часы (00:00–06:00 UTC)
+   // Вне торговых часов TSLA — гарантированно не US сессия
+   if(now.hour >= 6)
+      return;
+
+   // Проверяем, есть ли ещё позиция
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket <= 0) continue;
+      if(!PositionSelectByTicket(ticket)) continue;
+      if((int)PositionGetInteger(POSITION_MAGIC) != magic) continue;
+
+      double pnl = PositionGetDouble(POSITION_PROFIT);
+
+      MqlTradeRequest req = {};
+      MqlTradeResult  res = {};
+      req.action    = TRADE_ACTION_DEAL;
+      req.symbol    = symbol;
+      req.volume    = PositionGetDouble(POSITION_VOLUME);
+      req.deviation = 100;   // Широкий слиппаж — закрытие любой ценой
+      req.magic     = magic;
+      req.position  = ticket;
+
+      ENUM_POSITION_TYPE posType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
+      if(posType == POSITION_TYPE_BUY)
+      {
+         req.type  = ORDER_TYPE_SELL;
+         req.price = SymbolInfoDouble(symbol, SYMBOL_BID);
+      }
+      else
+      {
+         req.type  = ORDER_TYPE_BUY;
+         req.price = SymbolInfoDouble(symbol, SYMBOL_ASK);
+      }
+      req.type_filling = GetFillingModeClose(symbol);
+
+      LogWarning(StringFormat("OVERNIGHT CLOSE: позиция осталась с прошлого дня — экстренное закрытие | "
+                               "PnL=%.2f", pnl));
+
+      if(OrderSend(req, res) &&
+         (res.retcode == TRADE_RETCODE_DONE || res.retcode == TRADE_RETCODE_PLACED))
+      {
+         g_dailyTradeDone  = true;
+         g_eaState         = STATE_DISABLED_TODAY;
+         g_positionWasOpen = false;
+
+         GlobalVariableSet("ORB_TRADE_DONE", 1.0);
+         GlobalVariableSet("ORB_STATE",      (double)STATE_DISABLED_TODAY);
+
+         string msg = StringFormat("OVERNIGHT CLOSE выполнено | PnL=%.2f", pnl);
+         LogError(msg);
+         SendEaAlert(msg, true, true, true);
+      }
+      else
+      {
+         LogError(StringFormat("OVERNIGHT CLOSE не удалось: retcode=%d  ошибка=%d",
+                                res.retcode, GetLastError()));
+      }
+      return;   // Только одна позиция EA
    }
 }
 

@@ -188,8 +188,11 @@ void OnTick()
       if(g_eaState == STATE_IN_TRADE)
          CheckBreakeven(InpSymbol, InpMagic, activeBEThreshold);
 
-      // 4c. EOD принудительное закрытие в 15:55 ET
+      // 4c. EOD принудительное закрытие в 15:50 ET
       CheckEodClose(InpSymbol, InpMagic, g_etOffset);
+
+      // 4d. Аварийное закрытие если позиция осталась overnight
+      CheckOvernightClose(InpSymbol, InpMagic);
 
       return;
    }
@@ -281,6 +284,7 @@ void OnTimer()
          CheckBreakeven(InpSymbol, InpMagic, activeBEThreshold);
       }
       CheckEodClose(InpSymbol, InpMagic, g_etOffset);
+      CheckOvernightClose(InpSymbol, InpMagic);
    }
    else
    {
