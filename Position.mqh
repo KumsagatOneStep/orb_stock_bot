@@ -24,7 +24,7 @@
 //|  2. Пересчитывает и модифицирует TP от фактической цены          |
 //|  3. Сохраняет EntryPrice в GlobalVariables                       |
 //+------------------------------------------------------------------+
-void OnPositionOpened(string symbol, int magic, double takeProfit)
+void OnPositionOpened(string symbol, int magic, double takeProfit, double entryOffset)
 {
    // FIX BUG 6: явный поиск и выбор позиции через PositionSelectByTicket
    // PositionSelect(symbol) в Hedging может выбрать чужую позицию на этом символе
@@ -55,21 +55,29 @@ void OnPositionOpened(string symbol, int magic, double takeProfit)
 
    ENUM_POSITION_TYPE posType = (ENUM_POSITION_TYPE)PositionGetInteger(POSITION_TYPE);
 
-   // Пересчёт TP от фактической цены входа
-   double newTP;
+   // Пересчёт SL и TP от фактической цены входа — сохраняет R:R при слиппаже
+   double newSL, newTP;
    if(posType == POSITION_TYPE_BUY)
+   {
+      newSL = g_entryPrice - entryOffset;
       newTP = g_entryPrice + takeProfit;
+   }
    else
+   {
+      newSL = g_entryPrice + entryOffset;
       newTP = g_entryPrice - takeProfit;
+   }
 
    double currentSL = PositionGetDouble(POSITION_SL);
    double currentTP = PositionGetDouble(POSITION_TP);
 
-   // FIX БАГ 2: не отправляем модификацию если TP уже правильный (избегаем ошибки 4756)
-   if(MathAbs(currentTP - newTP) < 0.001)
+   // Не отправляем модификацию если оба уровня уже корректны (избегаем ошибки 4756)
+   bool slOk = (MathAbs(currentSL - newSL) < 0.001);
+   bool tpOk = (MathAbs(currentTP - newTP) < 0.001);
+   if(slOk && tpOk)
    {
-      LogInfo(StringFormat("TP уже корректен | EntryPrice=%.2f  TP=%.2f",
-                            g_entryPrice, newTP));
+      LogInfo(StringFormat("SL/TP уже корректны | EntryPrice=%.2f  SL=%.2f  TP=%.2f",
+                            g_entryPrice, newSL, newTP));
       return;
    }
 
@@ -77,15 +85,15 @@ void OnPositionOpened(string symbol, int magic, double takeProfit)
    MqlTradeResult  res = {};
    req.action   = TRADE_ACTION_SLTP;
    req.symbol   = symbol;
-   req.sl       = currentSL;
+   req.sl       = newSL;
    req.tp       = newTP;
    req.position = PositionGetInteger(POSITION_TICKET);
 
    if(!OrderSend(req, res))
-      LogWarning(StringFormat("TP не скорректирован: ошибка %d", GetLastError()));
+      LogWarning(StringFormat("SL/TP не скорректированы: ошибка %d", GetLastError()));
    else
-      LogInfo(StringFormat("TP скорректирован | EntryPrice=%.2f  TP=%.2f  SL=%.2f",
-                            g_entryPrice, newTP, currentSL));
+      LogInfo(StringFormat("SL/TP скорректированы | EntryPrice=%.2f  SL: %.2f→%.2f  TP: %.2f→%.2f",
+                            g_entryPrice, currentSL, newSL, currentTP, newTP));
 }
 
 //+------------------------------------------------------------------+

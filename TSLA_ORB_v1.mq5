@@ -237,7 +237,7 @@ void OnTick()
    //  Вызываем OnPositionOpened сразу — иначе CheckBreakeven на следующем тике
    //  использует g_entryPrice от вчерашней сделки и срабатывает некорректно
    if(ticket > 0)
-      OnPositionOpened(InpSymbol, InpMagic, activeTakeProfit);
+      OnPositionOpened(InpSymbol, InpMagic, activeTakeProfit, activeEntryOffset);
 
    // После первого тика в окне сбрасываем флаг
    if(g_firstEntryTick && nowInWindow)
