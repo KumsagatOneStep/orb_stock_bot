@@ -62,6 +62,11 @@ int GetOrbCandleHour(int etOffset)
 //+------------------------------------------------------------------+
 void CalcDynamicParams(double currentPrice, double basePrice)
 {
+   if(basePrice <= 0.0)
+   {
+      LogError("CalcDynamicParams: basePrice=0 — динамические параметры не рассчитаны");
+      return;
+   }
    double ratio      = currentPrice / basePrice;
    g_dynEntryOffset  = NormalizeDouble(0.50 * ratio, 2);
    g_dynBreakeven    = NormalizeDouble(1.50 * ratio, 2);

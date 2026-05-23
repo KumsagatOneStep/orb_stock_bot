@@ -128,10 +128,13 @@ void ResetDailyState(int magic)
    g_beDone          = false;
    g_levelALong      = false;
    g_levelAShort     = false;
-   g_entryPrice        = 0.0;
-   // N11: не сбрасываем флаг если позиция реально открыта overnight
+   // Не сбрасываем g_entryPrice и g_positionWasOpen если позиция открыта overnight
+   // (CheckBreakeven и EOD-закрытие нуждаются в g_entryPrice для корректной работы)
    if(PositionsTotalByMagic(magic) == 0)
+   {
+      g_entryPrice      = 0.0;
       g_positionWasOpen = false;
+   }
    g_eodCloseAttempts  = 0;
 
    // Сбрасываем GlobalVariables (раздел 5.2, 6.2)
@@ -230,7 +233,18 @@ void InitMonthlyRisk(double startBalanceParam, double maxLossPercent, double tra
    }
 
    g_startBalance = startBalance;
-   g_stopLevel    = NormalizeDouble(startBalance * (1.0 - maxLossPercent / 100.0), 2);
+
+   // maxLossPercent=0 означает "отключён" — аналогично maxDailyLossPercent=0 в CheckDailyLoss
+   if(maxLossPercent <= 0.0)
+   {
+      g_stopLevel = 0.0;
+      LogInfo("Месячный стоп-уровень отключён (MaxLossPercent=0)");
+      GlobalVariableSet("ORB_START_BALANCE",  g_startBalance);
+      GlobalVariableSet("ORB_START_BAL_DATE", (double)(long)today);
+      return;
+   }
+
+   g_stopLevel = NormalizeDouble(startBalance * (1.0 - maxLossPercent / 100.0), 2);
 
    GlobalVariableSet("ORB_START_BALANCE",  g_startBalance);
    GlobalVariableSet("ORB_START_BAL_DATE", (double)(long)today);
