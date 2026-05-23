@@ -91,25 +91,29 @@ void CalcOrbLot(string symbol, double orbPrice, double tradingRatio, double leve
    double contractSize = SymbolInfoDouble(symbol, SYMBOL_TRADE_CONTRACT_SIZE);
    if(contractSize <= 0.0)
    {
-      LogError(StringFormat("CalcOrbLot: ContractSize=%.0f — используем 100 как запасное значение", contractSize));
-      contractSize = 100.0;
+      LogError(StringFormat("CalcOrbLot: ContractSize=%.0f — используем 1 как запасное значение", contractSize));
+      contractSize = 1.0;
    }
 
    double balance        = AccountInfoDouble(ACCOUNT_BALANCE);
    double tradingCapital = balance * tradingRatio;
    double lotSize        = (tradingCapital * leverage) / (orbPrice * contractSize);
 
-   // Округление вниз до шага 0.01
-   lotSize = MathFloor(lotSize / 0.01) * 0.01;
+   // Округление до шага лота брокера (Capital.com: step=1, целые акции)
+   double lotStep = SymbolInfoDouble(symbol, SYMBOL_VOLUME_STEP);
+   if(lotStep <= 0.0) lotStep = 1.0;
+   lotSize = MathRound(lotSize / lotStep) * lotStep;
 
    double maxLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MAX);
-   if(maxLot <= 0.0) maxLot = 10.0;   // fallback если брокер не вернул лимит
+   if(maxLot <= 0.0) maxLot = 1000.0;
    if(lotSize > maxLot)
    {
       LogWarning(StringFormat("LotSize %.2f превышает MaxLot=%.2f — обрезан", lotSize, maxLot));
       lotSize = maxLot;
    }
-   lotSize = MathMax(lotSize, 0.01);
+   double minLot = SymbolInfoDouble(symbol, SYMBOL_VOLUME_MIN);
+   if(minLot <= 0.0) minLot = 1.0;
+   lotSize = MathMax(lotSize, minLot);
 
    g_lotSize = lotSize;
    GlobalVariableSet("ORB_LOT_SIZE", g_lotSize);

@@ -44,21 +44,16 @@ int      g_eodCloseAttempts = 0;     // Счётчик попыток EOD-зак
 
 #define EOD_MAX_ATTEMPTS 10          // Лимит попыток EOD-закрытия
 
+// Символ EA — устанавливается в OnInit, используется в Netting-функциях
+string   g_eaSymbol         = "";
+
 //+------------------------------------------------------------------+
-//|  Подсчёт открытых позиций с нашим Magic number                   |
+//|  Проверка наличия открытой позиции (Netting: по символу)         |
+//|  В Netting POSITION_MAGIC ненадёжен — используем PositionSelect  |
 //+------------------------------------------------------------------+
 int PositionsTotalByMagic(int magic)
 {
-   int count = 0;
-   for(int i = 0; i < PositionsTotal(); i++)
-   {
-      ulong ticket = PositionGetTicket(i);
-      if(ticket <= 0) continue;
-      if(!PositionSelectByTicket(ticket)) continue;   // BUG B: явный выбор перед POSITION_MAGIC
-      if((int)PositionGetInteger(POSITION_MAGIC) == magic)
-         count++;
-   }
-   return count;
+   return PositionSelect(g_eaSymbol) ? 1 : 0;
 }
 
 //+------------------------------------------------------------------+
@@ -353,28 +348,17 @@ void InitRisk(int magic)
    }
    // Если GV устарели — все флаги остаются false (default), торговля разрешена
 
-   // FIX BUG 4: явный выбор позиции перед PositionGetDouble
-   // EntryPrice восстанавливаем при наличии живой позиции (не зависит от даты GV)
-   if(PositionsTotalByMagic(magic) > 0)
+   // Netting: проверяем позицию по символу (POSITION_MAGIC ненадёжен)
+   if(PositionSelect(g_eaSymbol))
    {
       double entryPrice = GlobalVariableCheck("ORB_ENTRY_PRICE")
                           ? GlobalVariableGet("ORB_ENTRY_PRICE") : 0.0;
 
-      // Выбираем позицию по Magic явно через PositionSelectByTicket
-      for(int i = 0; i < PositionsTotal(); i++)
+      double posSL = PositionGetDouble(POSITION_SL);
+      if(entryPrice > 0.0 && MathAbs(posSL - entryPrice) < 0.001)
       {
-         ulong t = PositionGetTicket(i);
-         if(t > 0 && PositionSelectByTicket(t) &&   // N3: select до MAGIC-фильтра — иначе g_beDone=true при старте
-            (int)PositionGetInteger(POSITION_MAGIC) == magic)
-         {
-            double posSL = PositionGetDouble(POSITION_SL);
-            if(entryPrice > 0.0 && MathAbs(posSL - entryPrice) < 0.001)
-            {
-               g_beDone = true;
-               LogInfo("Синхронизация BE: SL == EntryPrice → BE_DONE=true");
-            }
-            break;
-         }
+         g_beDone = true;
+         LogInfo("Синхронизация BE: SL == EntryPrice → BE_DONE=true");
       }
    }
 
