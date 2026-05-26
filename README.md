@@ -1,7 +1,7 @@
-# TSLA ORB EA — v1.8
+# TSLA ORB EA — v1.9
 
 Expert Advisor для MetaTrader 5 на основе стратегии **Opening Range Breakout (ORB)** по акции TSLA.  
-Брокер: **Exness MT5 · Hedging · ContractSize = 100 акций**.
+Брокер: **Capital.com BAH · Hedging · ContractSize = 1 акция**.
 
 ---
 
@@ -9,12 +9,12 @@ Expert Advisor для MetaTrader 5 на основе стратегии **Openin
 
 Бот торгует пробой уровней последней 5-минутной свечи премаркета.
 
-| Этап | Время ET | Время сервера (лето UTC) |
-|---|---|---|
-| Формирование ORB-свечи | 09:25 – 09:30 | 13:25 – 13:30 |
-| Фиксация уровней HIGH / LOW | 09:30:00 | 13:30:00 |
-| Окно входа | 09:30 – 10:00 | 13:30 – 14:00 |
-| Принудительное закрытие EOD | 15:55 | 19:55 |
+| Этап | Время ET | Сервер UTC+0 (лето) | Сервер UTC+0 (зима) |
+|---|---|---|---|
+| Формирование ORB-свечи | 09:25 – 09:30 | 13:25 – 13:30 | 14:25 – 14:30 |
+| Фиксация уровней HIGH / LOW | 09:30:00 | 13:30:00 | 14:30:00 |
+| Окно входа | 09:30 – 10:00 | 13:30 – 14:00 | 14:30 – 15:00 |
+| Принудительное закрытие EOD | 15:50 | 19:50 | 20:50 |
 
 **Логика входа (двухступенчатая A→B):**
 
@@ -78,9 +78,10 @@ STATE_WAITING
 | `BreakevenThreshold` | 1.50 | Движение в прибыль для переноса SL в BE ($) |
 | `MaxSlippage` | 30 | Макс. слиппаж (пунктов) |
 | `RetryDelay` | 500 | Задержка повтора при реквоте (мс) |
-| `ETOffset` | −4 | Сдвиг ET от UTC (лето −4, зима −5) |
+| `ETOffset` | −4 | Сдвиг ET от UTC вручную (если AutoDST=false) |
+| `AutoDST` | true | Авто-определение летнего/зимнего ET (US DST) |
 | `SpikeFilterThreshold` | 2.00 | Макс. спред для входа ($, 0 = откл.) |
-| `UseDynamicParams` | true | Масштабировать EntryOffset/TP от текущей цены TSLA |
+| `UseDynamicParams` | true | Масштабировать EntryOffset/TP/BE от текущей цены TSLA |
 | `BasePrice` | 400.00 | Эталонная цена для динамических параметров |
 
 ### Риск-менеджмент
@@ -111,34 +112,37 @@ STATE_WAITING
 
 ```
 TradingCapital = AccountBalance × TradingRatio
-LotSize        = (TradingCapital × Leverage) / (ORBprice × 100)
+LotSize        = ROUND((TradingCapital × Leverage) / ORBprice)
+LotSize        = MathMax(LotSize, 1)     ← MinLot = 1
+LotSize        = MathMin(LotSize, 1000)  ← MaxLot = 1000
 ```
 
-**Пример** при балансе $280, TSLA = $400, Leverage = 20, TradingRatio = 0.7143:
+**Пример** при балансе $300, TSLA = $400, Leverage = 20, TradingRatio = 0.7143:
 
 ```
-TradingCapital = $280 × 0.7143 = $200
-LotSize        = ($200 × 20) / ($400 × 100) = 0.10 лота (10 акций)
+TradingCapital = $300 × 0.7143 = $214
+LotSize        = ROUND($214 × 20 / $400) = ROUND(10.71) = 11 акций
 ```
 
 | Баланс | TradingCapital | TSLA $400 | TSLA $300 | TSLA $500 |
 |---|---|---|---|---|
-| $300 | $214 | 0.11 | 0.14 | 0.09 |
-| $500 | $357 | 0.18 | 0.24 | 0.14 |
-| $1 000 | $714 | 0.36 | 0.48 | 0.29 |
-| $2 000 | $1 428 | 0.71 | 0.95 | 0.57 |
+| $300 | $214 | 11 акций | 14 акций | 9 акций |
+| $500 | $357 | 18 акций | 24 акций | 14 акций |
+| $1 000 | $714 | 36 акций | 48 акций | 29 акций |
+| $2 000 | $1 428 | 71 акций | 95 акций | 57 акций |
 
-Лот ограничен брокером Exness: **MinLot = 0.01, MaxLot = 10.00, шаг = 0.01**.
+Лот на Capital.com BAH: **MinLot = 1, MaxLot = 1000, шаг = 1 (только целые акции)**.
 
 ---
 
-## Динамические параметры (v1.6)
+## Динамические параметры (v1.6 / v1.9)
 
-При `UseDynamicParams = true` EntryOffset и TP масштабируются от цены ORB-свечи:
+При `UseDynamicParams = true` EntryOffset, TP и Breakeven масштабируются от цены ORB-свечи:
 
 ```
-EntryOffset = $0.50 × (ORBprice / BasePrice)
-TakeProfit  = $6.00 × (ORBprice / BasePrice)
+EntryOffset        = $0.50 × (ORBprice / BasePrice)
+BreakevenThreshold = $1.50 × (ORBprice / BasePrice)
+TakeProfit         = $6.00 × (ORBprice / BasePrice)
 R:R = 1:12 при любой цене TSLA
 ```
 
@@ -215,8 +219,21 @@ StopLevel     = StartBalance × (1 − MaxLossPercent / 100)
 2. Скомпилировать `TSLA_ORB_v1.mq5` в MetaEditor
 3. Открыть график TSLA на таймфрейме **M5**
 4. Перетащить EA на график
-5. Убедиться что счёт **Hedging** (не Netting)
+5. Убедиться что счёт **Hedging** (Capital.com BAH: заголовок MT5 — "Hedge")
 6. Разрешить **Algo Trading** и **Push-уведомления** в настройках MT5
+
+### Параметры брокера Capital.com BAH
+
+| Параметр | Значение |
+|---|---|
+| Сервер | Capital.ComBah |
+| Сервер UTC | UTC+0 (GMT) всегда |
+| Тип счёта | Hedging |
+| ContractSize | 1 (1 лот = 1 акция) |
+| MinLot | 1 |
+| MaxLot | 1000 |
+| Шаг лота | 1 |
+| Начало торговли | 08:00 UTC = 04:00 ET |
 
 ---
 
@@ -224,6 +241,7 @@ StopLevel     = StartBalance × (1 − MaxLossPercent / 100)
 
 | Версия | Изменения |
 |---|---|
+| **v1.9** | AutoDST (авто-определение US DST), динамический Breakeven, перенос на Capital.com BAH (Hedging, ContractSize=1) |
 | **v1.8** | Расчёт лота через плечо 1:20 от TradingCapital по цене ORB-свечи |
 | **v1.7** | Месячный риск-менеджмент: TradingRatio, MaxLossPercent, StartBalance, StopLevel |
 | **v1.6** | Динамические EntryOffset/TP масштабируются от текущей цены TSLA |
