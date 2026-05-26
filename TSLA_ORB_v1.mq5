@@ -6,7 +6,7 @@
 //|  Свеча:     09:25–09:30 ET (13:25–13:30 / 14:25–14:30 UTC)      |
 //|  Окно:      09:30–10:00 ET (30 минут)                            |
 //|  EOD:       15:50 ET принудительное закрытие                     |
-//|  Брокер:    Capital.com MT5, Netting, ContractSize=1              |
+//|  Брокер:    Capital.com MT5, Hedging, ContractSize=1              |
 //+------------------------------------------------------------------+
 #property copyright "TSLA ORB EA v1.9"
 #property version   "1.90"
@@ -64,18 +64,18 @@ void UpdateETOffset()
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   //--- 1. Проверка типа счёта (Capital.com = Netting)
+   //--- 1. Проверка типа счёта (Capital.com BAH = Hedging)
    if((ENUM_ACCOUNT_MARGIN_MODE)AccountInfoInteger(ACCOUNT_MARGIN_MODE)
-      != ACCOUNT_MARGIN_MODE_RETAIL_NETTING)
+      != ACCOUNT_MARGIN_MODE_RETAIL_HEDGING)
    {
-      Print("[TSLA_ORB] ОШИБКА: требуется Netting-счёт (ACCOUNT_MARGIN_MODE_RETAIL_NETTING)");
+      Print("[TSLA_ORB] ОШИБКА: требуется Hedging-счёт (ACCOUNT_MARGIN_MODE_RETAIL_HEDGING)");
       return INIT_FAILED;
    }
 
    //--- 2. Инициализация логгера
    InitLogger("TSLA_ORB", InpLogLevel, InpEnablePush, InpEnableEmail, InpEnableSound);
 
-   //--- 2a. Символ EA — используется в Netting-функциях через g_eaSymbol
+   //--- 2a. Символ EA — используется в функциях управления позицией
    g_eaSymbol = InpSymbol;
 
    //--- 3. Фиксируем начальный баланс для MaxDrawdown
