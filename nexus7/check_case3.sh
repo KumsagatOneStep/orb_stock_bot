@@ -1,4 +1,5 @@
 #!/bin/bash
+set -e
 
 BASE="$HOME/nexus7/case3"
 PASS=true
