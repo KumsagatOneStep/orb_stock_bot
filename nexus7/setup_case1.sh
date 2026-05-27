@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -e
 # NEXUS-7 :: ДЕЛО #001 — ПРИЗРАЧНЫЕ ФАЙЛЫ
 # Setup script — creates broken environment for the player to fix
 
@@ -50,7 +51,7 @@ cat > "$CASE_DIR/briefing.txt" <<'BRIEFING'
 ЗАДАНИЕ:
 
   1. Найди конфигурационный файл где-то внутри case1/
-     ПОДСКАЗКА: find . -name "*.conf*"
+     ПОДСКАЗКА: find ~/nexus7/case1 -name "*.conf*"
 
   2. Восстанови права доступа к файлу
      ПОДСКАЗКА: chmod 644 <путь_к_файлу>
