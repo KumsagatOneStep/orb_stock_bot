@@ -81,11 +81,9 @@ cat > "$CASE_DIR/briefing.txt" <<'BRIEF'
   # Найти строку с кодом 403:
   grep "403" logs/access.log
 
-  # Извлечь IP (второе поле) из нужной строки:
-  grep "DELETE" logs/access.log | awk '{print $2}'
-
-  # Извлечь время (первое поле без скобок):
-  grep "DELETE" logs/access.log | awk '{print $1}' | tr -d '[]' | cut -d' ' -f2
+  # Извлечь IP и время:
+  grep "DELETE" logs/access.log | awk '{print $3}'   # IP адрес
+  grep "DELETE" logs/access.log | awk '{print $2}' | tr -d ']'  # время
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
