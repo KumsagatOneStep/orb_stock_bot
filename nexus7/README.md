@@ -27,6 +27,11 @@ cd ~
 bash ~/nexus7/setup_case1.sh
 ```
 
+Для Сезона 2 (автоматизация):
+```bash
+bash ~/nexus7/setup_case101.sh
+```
+
 ---
 
 ## Структура квеста
@@ -38,6 +43,25 @@ bash ~/nexus7/setup_case1.sh
 | #003 | Мёртвый Страж | чтение логов, диагностика сервисов, `mv` | ~25 мин |
 | #004 | Ночной Таймер | `find -mtime`, `cat`, `sed`, cron | ~25 мин |
 | #005 | Протокол Феникс | всё вместе + `tar` | ~45 мин |
+
+---
+
+## Сезон 2: Операция Автоматизация
+
+> Kira-7 внедряется в корпорацию OmegaTech. Каждое дело — этап тайной операции.
+
+| Дело | Название | Навыки | Время |
+|------|----------|--------|-------|
+| #101 | Первый Контакт | `set -euo pipefail`, переменные, `if/else` | ~20 мин |
+| #102 | Сборочный Цех | функции, `for`-цикл, обработка файлов | ~25 мин |
+| #103 | Ночной Сторож | `crontab`, `PATH` в cron, `flock`, логирование | ~25 мин |
+| #104 | Постоянный Дозор | `systemd` unit + timer, `Persistent=true` | ~30 мин |
+| #105 | Финал: Исход | `ssh-keygen`, `authorized_keys`, `rsync` | ~40 мин |
+
+Запуск Сезона 2:
+```bash
+bash ~/nexus7/setup_case101.sh
+```
 
 ---
 
@@ -100,6 +124,7 @@ find      grep      awk       sed       cat
 ls        cp        mv        rm        mkdir
 chmod     chown     tar       touch     stat
 crontab   date      ps        kill      df / du
+ssh-keygen  rsync   flock     systemctl
 ```
 
 ---
