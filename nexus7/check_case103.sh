@@ -53,7 +53,7 @@ else
     echo "  ✓ cron.log существует и не пустой."
 fi
 
-CRON_ACTIVE=$(crontab -l 2>/dev/null | grep -c "collect.sh" || true)
+CRON_ACTIVE=$(crontab -l 2>/dev/null | grep -c "collect.sh") || CRON_ACTIVE=0
 if [ "$CRON_ACTIVE" -gt 0 ]; then
     echo "  ✗ Запись с collect.sh всё ещё активна в crontab."
     echo "    Подсказка: crontab -e  → удали строку с collect.sh"

@@ -30,7 +30,7 @@ cat > "$CASE_DIR/cron_broken.txt" <<'BROKEN'
 # Проблема 1: PATH не указан — cron не найдёт collect.sh
 * * * * * collect.sh >> cron.log 2>&1
 
-# Проблема 2: путь к скрипту относительный — не работает в cron
+# Проблема 2: ~ не раскрывается в cron — используй полный путь /home/user/...
 * * * * * ~/nexus7/case103/collect.sh
 
 # Проблема 3: нет flock — если collect.sh зависнет, процессы накопятся
