@@ -34,7 +34,7 @@ set -euo pipefail
 echo "Замени TODO-секции выше и удали эту строку"
 TMPL
 
-cat > "$CASE_DIR/README.txt" <<README
+cat > "$CASE_DIR/README.txt" <<'README'
 === ИНСТРУКЦИЯ К ДЕЛУ #105 ===
 
 1. СГЕНЕРИРОВАТЬ SSH-КЛЮЧ (без пароля):
