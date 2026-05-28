@@ -78,8 +78,12 @@ if [ -f "$REPORT" ]; then
 fi
 
 if [ -f "$REPORT" ]; then
-    ACTUAL_CRITICAL=$(grep -rl '\[CRITICAL\]' "$CASE_DIR/logs/" | xargs -I{} basename {} 2>/dev/null | head -1)
-    if [ -n "$ACTUAL_CRITICAL" ] && grep -q "$ACTUAL_CRITICAL" "$REPORT"; then
+    ACTUAL_CRITICAL=$(basename "$(grep -rl '\[CRITICAL\]' "$CASE_DIR/logs/" | head -1)" 2>/dev/null)
+    if [ -z "$ACTUAL_CRITICAL" ]; then
+        echo "  ✗ [CRITICAL] не найден ни в одном файле logs/. Запусти setup заново:"
+        echo "    bash ~/nexus7/setup_case102.sh"
+        PASS=false
+    elif grep -q "$ACTUAL_CRITICAL" "$REPORT"; then
         echo "  ✓ CRITICAL_FOUND правильно указывает на: $ACTUAL_CRITICAL"
     else
         echo "  ✗ CRITICAL_FOUND не содержит правильное имя файла (ожидался: $ACTUAL_CRITICAL)."
