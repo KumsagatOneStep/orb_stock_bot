@@ -38,6 +38,7 @@ input double   InpStartBalance        = 0.0;        // Стартовый бал
 input double   InpSpikeFilterThreshold= 2.00;       // Фильтр спайков в USD (0=откл.)
 input double   InpBasePrice           = 400.00;     // Эталонная цена $ для динамических параметров
 input bool     InpUseDynamicParams    = true;       // Динамический EntryOffset/SL/TP (v1.6)
+input bool     InpUseExternalLevels   = false;      // Читать уровни из levels.txt (EA_DataReader)
 input int      InpMagic               = 20250101;   // Magic number EA
 input bool     InpEnablePush          = true;       // Push-уведомления
 input bool     InpEnableEmail         = false;      // Email-уведомления
@@ -94,13 +95,13 @@ int OnInit()
    UpdateETOffset();
    bool hasPosition = (PositionsTotalByMagic(InpMagic) > 0);
    InitLevels(InpSymbol, g_etOffset, hasPosition, InpUseDynamicParams, InpBasePrice,
-              InpTradingRatio, InpLeverage);
+              InpTradingRatio, InpLeverage, InpUseExternalLevels);
 
    //--- 7. Информационный лог запуска
    LogInfo(StringFormat("EA запущен | Инструмент=%s  Баланс=%.2f  "
                          "Leverage=1:%.0f  TradingRatio=%.4f  DynParams=%s(Base=$%.2f)  "
                          "EntryOffset=%.2f  TP=%.2f  BE=%.2f  ETOffset=%+d  AutoDST=%s  Magic=%d  "
-                         "StartBalance=%.2f  StopLevel=%.2f  TradingCapital=%.2f",
+                         "StartBalance=%.2f  StopLevel=%.2f  TradingCapital=%.2f  ExternalLevels=%s",
                          InpSymbol,
                          g_initialBalance,
                          InpLeverage,
@@ -115,7 +116,8 @@ int OnInit()
                          InpMagic,
                          g_startBalance,
                          g_stopLevel,
-                         g_initialBalance * InpTradingRatio));
+                         g_initialBalance * InpTradingRatio,
+                         InpUseExternalLevels ? "ON" : "OFF"));
 
    //--- 8. Установка таймера для периодических задач (каждую секунду)
    EventSetTimer(1);
@@ -171,7 +173,7 @@ void OnTick()
 
    //--- 2. Фиксация ORB-уровней в момент закрытия свечи 09:25–09:30 ET
    ProcessLevelTick(InpSymbol, g_etOffset, InpUseDynamicParams, InpBasePrice,
-                    InpTradingRatio, InpLeverage);
+                    InpTradingRatio, InpLeverage, InpUseExternalLevels);
 
    //--- 3. Нет смысла продолжать если советник отключён на сегодня
    if(g_eaState == STATE_DISABLED_TODAY)
@@ -293,7 +295,7 @@ void OnTimer()
    {
       // БАГ 1 FIX: фиксируем уровни через таймер если тик в минуту 13:30 не пришёл
       ProcessLevelTick(InpSymbol, g_etOffset, InpUseDynamicParams,
-                       InpBasePrice, InpTradingRatio, InpLeverage);
+                       InpBasePrice, InpTradingRatio, InpLeverage, InpUseExternalLevels);
       CheckEntryWindowExpiry(g_etOffset);
    }
 }
