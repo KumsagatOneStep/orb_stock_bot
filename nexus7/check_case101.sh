@@ -5,6 +5,12 @@ CASE_DIR="$HOME/nexus7/case101"
 SCRIPT="$CASE_DIR/deploy.sh"
 PASS=true
 
+if [ ! -d "$CASE_DIR" ]; then
+    echo "  ✗ Рабочая директория не найдена. Запусти сначала:"
+    echo "    bash ~/nexus7/setup_case101.sh"
+    exit 1
+fi
+
 echo ""
 echo "╔══════════════════════════════════════════════════════════════╗"
 echo "║          N E X U S - 7   //   П Р О В Е Р К А               ║"
@@ -50,7 +56,7 @@ if [ -f "$SCRIPT" ]; then
 fi
 
 if [ -f "$SCRIPT" ]; then
-    if grep -q 'STATUS' "$SCRIPT" && grep -q '\bif\b' "$SCRIPT"; then
+    if grep -q 'STATUS' "$SCRIPT" && grep -q 'if \[' "$SCRIPT"; then
         echo "  ✓ Проверка STATUS найдена."
     else
         echo "  ✗ Нет проверки STATUS в if-блоке."
@@ -83,15 +89,17 @@ fi
 
 if [ -f "$SCRIPT" ] && [ "$PASS" = true ]; then
     # Temporarily set STATUS=DEGRADED in the status file for this test
+    trap 'mv "$CASE_DIR/system/status.txt.bak" "$CASE_DIR/system/status.txt" 2>/dev/null || true' EXIT
     cp "$CASE_DIR/system/status.txt" "$CASE_DIR/system/status.txt.bak"
     printf 'STATUS=DEGRADED\nUPTIME=99.97%%\nTHREAT_LEVEL=RED\n' > "$CASE_DIR/system/status.txt"
     if ( cd "$CASE_DIR" && AGENT_NAME=Kira bash deploy.sh >/dev/null 2>&1 ); then
         echo "  ✗ deploy.sh не прерывается при STATUS=DEGRADED."
-        echo '    Добавь: if [ "$STATUS" != "OPERATIONAL" ]; then echo "ERROR: сервер не готов" >&2; exit 1; fi'
+        echo '    Добавь: if [ "$STATUS" != "OPERATIONAL" ]; then echo "ERROR" >&2; exit 1; fi'
         PASS=false
     else
         echo "  ✓ deploy.sh правильно прерывается при STATUS=DEGRADED."
     fi
+    trap - EXIT
     mv "$CASE_DIR/system/status.txt.bak" "$CASE_DIR/system/status.txt"
 fi
 
