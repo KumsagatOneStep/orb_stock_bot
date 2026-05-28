@@ -13,6 +13,7 @@
 #define LEVELS_MQH
 
 #include "Logger.mqh"
+#include "FileManager.mqh"
 
 //+------------------------------------------------------------------+
 //|  Перечисление состояний советника                                |
@@ -293,6 +294,86 @@ bool RestoreLevelsFromGV(string symbol, bool useDynamic = false, double basePric
 }
 
 //+------------------------------------------------------------------+
+//|  Загрузка уровней из levels.txt (EA_DataReader → FILE_COMMON)   |
+//|  Проверяет DATE == сегодня и STATUS == "READY"                   |
+//|  Устанавливает те же globals что FixLevelsFromHistory()          |
+//+------------------------------------------------------------------+
+bool ReadFromFile(string symbol, double tradingRatio, double leverage)
+{
+   OrbLevels lv;
+   if(!ReadLevelsFile(lv))
+   {
+      LogDebug("ReadFromFile: orb_levels.txt не найден");
+      return false;
+   }
+
+   string today = OrbTodayString();
+   if(lv.date != today)
+   {
+      LogWarning(StringFormat("ReadFromFile: дата файла '%s' != сегодня '%s' — игнорируем",
+                               lv.date, today));
+      return false;
+   }
+
+   if(lv.status != "READY")
+   {
+      LogDebug(StringFormat("ReadFromFile: STATUS='%s' (ожидаем READY) — файл ещё пишется",
+                             lv.status));
+      return false;
+   }
+
+   if(lv.preHigh <= 0.0 || lv.preLow <= 0.0 || lv.preHigh <= lv.preLow)
+   {
+      LogError(StringFormat("ReadFromFile: некорректные уровни HIGH=%.5f LOW=%.5f",
+                             lv.preHigh, lv.preLow));
+      g_eaState = STATE_DISABLED_TODAY;
+      GlobalVariableSet("ORB_STATE", (double)STATE_DISABLED_TODAY);
+      SendEaAlert("ОШИБКА: некорректные уровни в levels.txt — торговля отменена",
+                  true, false, false);
+      return false;
+   }
+
+   g_preHigh  = lv.preHigh;
+   g_preLow   = lv.preLow;
+
+   g_dynEntryOffset = lv.entryOffset;
+   g_dynBreakeven   = lv.breakeven;
+   g_dynTP          = lv.takeProfit;
+   g_dynReady       = true;
+
+   GlobalVariableSet("ORB_ENTRY_OFFSET", g_dynEntryOffset);
+   GlobalVariableSet("ORB_STOP_LOSS",    g_dynEntryOffset);
+   GlobalVariableSet("ORB_BREAKEVEN",    g_dynBreakeven);
+   GlobalVariableSet("ORB_TAKE_PROFIT",  g_dynTP);
+
+   if(lv.closePrice > 0.0)
+   {
+      GlobalVariableSet("ORB_CLOSE_PRICE", lv.closePrice);
+      CalcOrbLot(symbol, lv.closePrice, tradingRatio, leverage);
+   }
+
+   GlobalVariableSet("ORB_PRE_HIGH", g_preHigh);
+   GlobalVariableSet("ORB_PRE_LOW",  g_preLow);
+   GlobalVariableSet("ORB_STATE",    (double)STATE_LEVELS_SET);
+
+   g_eaState     = STATE_LEVELS_SET;
+   g_levelsFixed = true;
+
+   string msg = StringFormat("Уровни загружены из файла | "
+                              "PRE_HIGH=%.2f  PRE_LOW=%.2f  "
+                              "Entry=%.2f  BE=%.2f  TP=%.2f  Lot=%.2f  "
+                              "Время файла: %s",
+                              g_preHigh, g_preLow,
+                              g_dynEntryOffset, g_dynBreakeven, g_dynTP,
+                              g_lotSize, lv.timestamp);
+   LogInfo(msg);
+   SendEaAlert(StringFormat("ORB уровни из файла | HIGH=%.2f  LOW=%.2f",
+                             g_preHigh, g_preLow),
+               true, false, false);
+   return true;
+}
+
+//+------------------------------------------------------------------+
 //|  Инициализация модуля — вызывается из OnInit()                   |
 //|                                                                  |
 //|  Параметры:                                                      |
@@ -308,7 +389,8 @@ bool RestoreLevelsFromGV(string symbol, bool useDynamic = false, double basePric
 //+------------------------------------------------------------------+
 void InitLevels(string symbol, int etOffset, bool hasOpenPosition,
                 bool useDynamic = false, double basePrice = 400.0,
-                double tradingRatio = 0.7143, double leverage = 20.0)
+                double tradingRatio = 0.7143, double leverage = 20.0,
+                bool useExternalLevels = false)
 {
    MqlDateTime now;
    TimeToStruct(TimeTradeServer(), now);
@@ -348,10 +430,21 @@ void InitLevels(string symbol, int etOffset, bool hasOpenPosition,
                            now.hour, now.min));
 
       if(!RestoreLevelsFromGV(symbol, useDynamic, basePrice, tradingRatio, leverage))
-         FixLevelsFromHistory(symbol, etOffset, useDynamic, basePrice, tradingRatio, leverage);
+      {
+         if(useExternalLevels)
+         {
+            if(!ReadFromFile(symbol, tradingRatio, leverage))
+            {
+               LogError("InitLevels: файл уровней недоступен при позднем старте");
+               g_eaState = STATE_DISABLED_TODAY;
+               GlobalVariableSet("ORB_STATE", (double)STATE_DISABLED_TODAY);
+            }
+         }
+         else
+            FixLevelsFromHistory(symbol, etOffset, useDynamic, basePrice, tradingRatio, leverage);
+      }
       else
          g_eaState = STATE_LEVELS_SET;
-      // При неудаче FixLevelsFromHistory сам выставит STATE_DISABLED_TODAY
 
       return;
    }
@@ -371,7 +464,8 @@ void InitLevels(string symbol, int etOffset, bool hasOpenPosition,
 //+------------------------------------------------------------------+
 void ProcessLevelTick(string symbol, int etOffset,
                       bool useDynamic = false, double basePrice = 400.0,
-                      double tradingRatio = 0.7143, double leverage = 20.0)
+                      double tradingRatio = 0.7143, double leverage = 20.0,
+                      bool useExternalLevels = false)
 {
    if(g_levelsFixed)
       return;
@@ -381,8 +475,33 @@ void ProcessLevelTick(string symbol, int etOffset,
    MqlDateTime now;
    TimeToStruct(TimeTradeServer(), now);
 
-   int fixHour = GetOrbCandleHour(etOffset);
+   int fixHour = GetOrbCandleHour(etOffset);   // 13 лето / 14 зима
 
+   if(useExternalLevels)
+   {
+      // Начинаем проверять файл только после fixHour:30 (когда EA_DataReader пишет файл)
+      if(now.hour < fixHour || (now.hour == fixHour && now.min < 30))
+         return;
+
+      if(ReadFromFile(symbol, tradingRatio, leverage))
+         return;   // уровни загружены
+
+      // Таймаут: если прошло 5 минут после fixHour:30 — файл так и не появился
+      bool pastTimeout = (now.hour > fixHour) ||
+                         (now.hour == fixHour && now.min >= 35);
+      if(pastTimeout)
+      {
+         string msg = StringFormat("EA_DataReader не записал levels.txt до %02d:35 сервер — "
+                                   "торговля отменена", fixHour);
+         LogError(msg);
+         SendEaAlert(msg, true, false, false);
+         g_eaState = STATE_DISABLED_TODAY;
+         GlobalVariableSet("ORB_STATE", (double)STATE_DISABLED_TODAY);
+      }
+      return;
+   }
+
+   // Стандартный режим: самостоятельная фиксация из истории M5
    if(now.hour == fixHour && now.min == 30)
    {
       LogDebug(StringFormat("Тик %02d:%02d:%02d — момент фиксации ORB-уровней",
