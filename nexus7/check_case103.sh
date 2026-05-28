@@ -37,7 +37,14 @@ if [ "$SNAP_COUNT" -eq 0 ]; then
     echo "    Или запусти вручную: bash $CASE_DIR/collect.sh"
     PASS=false
 else
-    echo "  ✓ Снапшоты созданы ($SNAP_COUNT шт.)."
+    FIRST_SNAP=$(find "$CASE_DIR/snapshots/" -name "snap_*.txt" 2>/dev/null | head -1)
+    if grep -q "=== OMEGA SNAPSHOT ===" "$FIRST_SNAP" 2>/dev/null; then
+        echo "  ✓ Снапшоты созданы ($SNAP_COUNT шт.) — содержимое корректно."
+    else
+        echo "  ✗ Файлы snap_*.txt найдены, но содержимое не соответствует формату collect.sh."
+        echo "    Убедись, что файлы созданы запуском: bash $CASE_DIR/collect.sh"
+        PASS=false
+    fi
 fi
 
 CRON_LOG="$CASE_DIR/cron.log"

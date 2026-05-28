@@ -35,7 +35,7 @@ elif [ -f "$SCRIPT" ]; then
 fi
 
 if [ -f "$SCRIPT" ]; then
-    if grep -qE '\(\)|function' "$SCRIPT"; then
+    if grep -qE '^[[:space:]]*[a-zA-Z_][a-zA-Z0-9_]*[[:space:]]*\(\)' "$SCRIPT"; then
         echo "  ✓ Функция определена в скрипте."
     else
         echo "  ✗ Функция не найдена."
