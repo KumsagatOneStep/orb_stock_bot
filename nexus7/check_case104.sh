@@ -26,6 +26,7 @@ if [ ! -f "$SVC" ]; then
 elif grep -q "__SCRIPT_PATH__" "$SVC"; then
     echo "  ✗ units/omega-monitor.service содержит незамененный __SCRIPT_PATH__."
     echo "    macOS: sed -i '' \"s|__SCRIPT_PATH__|/полный/путь/к/monitor.sh|g\" units/omega-monitor.service"
+    echo "    Linux: sed -i \"s|__SCRIPT_PATH__|/полный/путь/к/monitor.sh|g\" units/omega-monitor.service"
     PASS=false
 elif grep -q "ExecStart=" "$SVC"; then
     echo "  ✓ omega-monitor.service корректен (ExecStart= заполнен)."

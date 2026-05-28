@@ -74,10 +74,10 @@ systemd timer с Persistent=true — другое дело: он запусти�
        cp templates/omega-monitor.service.template units/omega-monitor.service
        cp templates/omega-monitor.timer.template   units/omega-monitor.timer
    - Замени __SCRIPT_PATH__ на полный путь к monitor.sh:
-       # macOS:
+   macOS:
        sed -i '' "s|__SCRIPT_PATH__|$CASE_DIR/monitor.sh|g" units/omega-monitor.service
-       # Linux:
-       # sed -i "s|__SCRIPT_PATH__|$CASE_DIR/monitor.sh|g" units/omega-monitor.service
+   Linux:
+       sed -i "s|__SCRIPT_PATH__|$CASE_DIR/monitor.sh|g" units/omega-monitor.service
 
 3. Проверь результат:
    cat units/omega-monitor.service   # → ExecStart=$CASE_DIR/monitor.sh
