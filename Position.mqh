@@ -26,8 +26,9 @@
 //+------------------------------------------------------------------+
 void OnPositionOpened(string symbol, int magic, double takeProfit, double entryOffset)
 {
-   // Netting: одна позиция на символ — ищем по символу, не по Magic
-   if(!PositionSelect(symbol))
+   // Hedging: ищем позицию по POSITION_MAGIC
+   ulong posTicket = GetPositionTicketByMagic(magic);
+   if(!PositionSelectByTicket(posTicket))
    {
       LogError("OnPositionOpened: позиция не найдена");
       return;
@@ -73,7 +74,7 @@ void OnPositionOpened(string symbol, int magic, double takeProfit, double entryO
    req.symbol   = symbol;
    req.sl       = newSL;
    req.tp       = newTP;
-   req.position = PositionGetInteger(POSITION_TICKET);   // SLTP требует ticket даже в Netting
+   req.position = PositionGetInteger(POSITION_TICKET);   // Hedging: SLTP требует ticket позиции
 
    if(!OrderSend(req, res))
       LogWarning(StringFormat("SL/TP не скорректированы: ошибка %d", GetLastError()));
@@ -103,8 +104,9 @@ void CheckBreakeven(string symbol, int magic, double breakevenThreshold)
    if(g_entryPrice <= 0.0)
       return;
 
-   // Netting: одна позиция на символ — ищем по символу
-   if(!PositionSelect(symbol))
+   // Hedging: ищем позицию по POSITION_MAGIC
+   ulong posTicket = GetPositionTicketByMagic(magic);
+   if(!PositionSelectByTicket(posTicket))
    {
       g_positionWasOpen = false;
       return;
@@ -133,7 +135,7 @@ void CheckBreakeven(string symbol, int magic, double breakevenThreshold)
       req.symbol   = symbol;
       req.sl       = newSL;
       req.tp       = curTP;
-      req.position = ticket;   // SLTP требует ticket даже в Netting
+      req.position = ticket;   // Hedging: SLTP требует ticket позиции
 
       if(OrderSend(req, res) &&
          (res.retcode == TRADE_RETCODE_DONE || res.retcode == TRADE_RETCODE_PLACED))
@@ -174,8 +176,9 @@ bool CheckEodClose(string symbol, int magic, int etOffset)
    if(g_eodCloseAttempts >= EOD_MAX_ATTEMPTS)
       return false;
 
-   // Netting: одна позиция на символ — ищем по символу, не по Magic
-   if(!PositionSelect(symbol))
+   // Hedging: ищем позицию по POSITION_MAGIC
+   ulong posTicket = GetPositionTicketByMagic(magic);
+   if(!PositionSelectByTicket(posTicket))
       return false;
 
    double pnl    = PositionGetDouble(POSITION_PROFIT);
@@ -189,7 +192,7 @@ bool CheckEodClose(string symbol, int magic, int etOffset)
    req.volume    = volume;
    req.deviation = 50;   // Широкий слиппаж для гарантированного закрытия
    req.magic     = magic;
-   // req.position НЕ устанавливаем — в Netting закрытие идёт через встречный ордер по символу
+   req.position  = posTicket;
 
    if(posType == POSITION_TYPE_BUY)
    {
@@ -246,8 +249,8 @@ void CheckPositionClosed(string symbol, int magic)
    if(!g_positionWasOpen)
       return;
 
-   // Netting: проверка по символу — в Netting нет POSITION_MAGIC-фильтра
-   if(PositionSelect(symbol))
+   // Hedging: проверка по POSITION_MAGIC
+   if(GetPositionTicketByMagic(magic) > 0)
       return;
 
    // Позиция закрылась — ищем результат в истории за последние сутки
@@ -262,7 +265,6 @@ void CheckPositionClosed(string symbol, int magic)
       ulong dealTicket = HistoryDealGetTicket(i);
       if(dealTicket <= 0) continue;
       if(!HistoryDealSelect(dealTicket)) continue;
-      // В Netting DEAL_MAGIC при закрытии SL/TP может быть 0 — фильтруем только по символу
       if(HistoryDealGetString(dealTicket, DEAL_SYMBOL) != symbol) continue;
 
       ENUM_DEAL_ENTRY entry = (ENUM_DEAL_ENTRY)HistoryDealGetInteger(dealTicket, DEAL_ENTRY);
@@ -301,8 +303,9 @@ void InitPosition(int magic)
          g_entryPrice = saved;
    }
 
-   // Netting: ищем позицию по символу
-   if(PositionSelect(g_eaSymbol))
+   // Hedging: ищем позицию по POSITION_MAGIC
+   ulong posTicket = GetPositionTicketByMagic(magic);
+   if(posTicket > 0 && PositionSelectByTicket(posTicket))
    {
       g_positionWasOpen = true;
 
@@ -335,8 +338,9 @@ void CheckOvernightClose(string symbol, int magic)
    if(now.hour >= 6)
       return;
 
-   // Netting: ищем позицию по символу
-   if(!PositionSelect(symbol))
+   // Hedging: ищем позицию по POSITION_MAGIC
+   ulong posTicket = GetPositionTicketByMagic(magic);
+   if(!PositionSelectByTicket(posTicket))
       return;
 
    double pnl    = PositionGetDouble(POSITION_PROFIT);
@@ -350,7 +354,7 @@ void CheckOvernightClose(string symbol, int magic)
    req.volume    = volume;
    req.deviation = 100;   // Широкий слиппаж — закрытие любой ценой
    req.magic     = magic;
-   // req.position НЕ устанавливаем — в Netting закрытие идёт через встречный ордер по символу
+   req.position  = posTicket;
 
    if(posType == POSITION_TYPE_BUY)
    {

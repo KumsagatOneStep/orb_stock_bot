@@ -296,7 +296,6 @@ bool RestoreLevelsFromGV(string symbol, bool useDynamic = false, double basePric
 //+------------------------------------------------------------------+
 //|  Загрузка уровней из levels.txt (EA_DataReader → FILE_COMMON)   |
 //|  Проверяет DATE == сегодня и STATUS == "READY"                   |
-//|  Устанавливает те же globals что FixLevelsFromHistory()          |
 //+------------------------------------------------------------------+
 bool ReadFromFile(string symbol, double tradingRatio, double leverage)
 {
@@ -377,9 +376,10 @@ bool ReadFromFile(string symbol, double tradingRatio, double leverage)
 //|  Инициализация модуля — вызывается из OnInit()                   |
 //|                                                                  |
 //|  Параметры:                                                      |
-//|    symbol          — торговый инструмент                         |
-//|    etOffset        — смещение ET от UTC (-4 лето, -5 зима)       |
-//|    hasOpenPosition — есть ли открытая позиция с нашим Magic      |
+//|    symbol             — торговый инструмент                      |
+//|    etOffset           — смещение ET от UTC (-4 лето, -5 зима)    |
+//|    hasOpenPosition    — есть ли открытая позиция с нашим Magic   |
+//|    useExternalLevels  — читать уровни из levels.txt (DataReader) |
 //|                                                                  |
 //|  Сценарии позднего запуска (раздел 7.4):                         |
 //|    A. Открытая позиция   → восстановить уровни, STATE_IN_TRADE   |
@@ -475,7 +475,7 @@ void ProcessLevelTick(string symbol, int etOffset,
    MqlDateTime now;
    TimeToStruct(TimeTradeServer(), now);
 
-   int fixHour = GetOrbCandleHour(etOffset);   // 13 лето / 14 зима
+   int fixHour = GetOrbCandleHour(etOffset);
 
    if(useExternalLevels)
    {
@@ -484,7 +484,7 @@ void ProcessLevelTick(string symbol, int etOffset,
          return;
 
       if(ReadFromFile(symbol, tradingRatio, leverage))
-         return;   // уровни загружены
+         return;
 
       // Таймаут: если прошло 5 минут после fixHour:30 — файл так и не появился
       bool pastTimeout = (now.hour > fixHour) ||

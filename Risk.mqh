@@ -44,16 +44,34 @@ int      g_eodCloseAttempts = 0;     // Счётчик попыток EOD-зак
 
 #define EOD_MAX_ATTEMPTS 10          // Лимит попыток EOD-закрытия
 
-// Символ EA — устанавливается в OnInit, используется в Netting-функциях
+// Символ EA — устанавливается в OnInit, используется при отправке ордеров
 string   g_eaSymbol         = "";
 
 //+------------------------------------------------------------------+
-//|  Проверка наличия открытой позиции (Netting: по символу)         |
-//|  В Netting POSITION_MAGIC ненадёжен — используем PositionSelect  |
+//|  Проверка наличия открытой позиции (Hedging: по POSITION_MAGIC)  |
+//|  GetPositionTicketByMagic() возвращает тикет для select/close    |
 //+------------------------------------------------------------------+
 int PositionsTotalByMagic(int magic)
 {
-   return PositionSelect(g_eaSymbol) ? 1 : 0;
+   int count = 0;
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket > 0 && (int)PositionGetInteger(POSITION_MAGIC) == magic)
+         count++;
+   }
+   return count;
+}
+
+ulong GetPositionTicketByMagic(int magic)
+{
+   for(int i = PositionsTotal() - 1; i >= 0; i--)
+   {
+      ulong ticket = PositionGetTicket(i);
+      if(ticket > 0 && (int)PositionGetInteger(POSITION_MAGIC) == magic)
+         return ticket;
+   }
+   return 0;
 }
 
 //+------------------------------------------------------------------+
@@ -362,8 +380,9 @@ void InitRisk(int magic)
    }
    // Если GV устарели — все флаги остаются false (default), торговля разрешена
 
-   // Netting: проверяем позицию по символу (POSITION_MAGIC ненадёжен)
-   if(PositionSelect(g_eaSymbol))
+   // Hedging: ищем позицию по POSITION_MAGIC
+   ulong posTicket = GetPositionTicketByMagic(magic);
+   if(posTicket > 0 && PositionSelectByTicket(posTicket))
    {
       double entryPrice = GlobalVariableCheck("ORB_ENTRY_PRICE")
                           ? GlobalVariableGet("ORB_ENTRY_PRICE") : 0.0;
