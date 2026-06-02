@@ -186,8 +186,10 @@ ulong SendMarketOrder(string symbol,
 //+------------------------------------------------------------------+
 //|  Главная функция входа — вызывается из OnTick()                  |
 //|                                                                  |
-//|  FIX BUG 2: добавлен параметр maxDailyLossPercent               |
-//|  FIX BUG 3: entryOffset передаётся в SendMarketOrder            |
+//|  FIX BUG 2:  добавлен параметр maxDailyLossPercent               |
+//|  FIX BUG 3:  entryOffset передаётся в SendMarketOrder            |
+//|  FIX BUG 13: GV-лок ORB_ORDER_LOCK защищает от двойного входа    |
+//|              при нескольких экземплярах EA в одном терминале      |
 //+------------------------------------------------------------------+
 ulong ProcessEntryTick(string symbol,
                        int    etOffset,
@@ -214,6 +216,17 @@ ulong ProcessEntryTick(string symbol,
    if(!IsEntryAllowed(magic, etOffset))
       return 0;
 
+   // FIX BUG 13: межпроцессный лок — GlobalVariables разделяются между всеми EA в терминале.
+   // Если другой экземпляр уже захватил лок (ORB_ORDER_LOCK=1), отказываем во входе.
+   // Лок сбрасывается в ResetDailyState() при смене дня.
+   if(GlobalVariableCheck("ORB_ORDER_LOCK") && GlobalVariableGet("ORB_ORDER_LOCK") > 0.5)
+   {
+      LogWarning("Вход заблокирован: ORB_ORDER_LOCK=1 (другой экземпляр EA уже открыл позицию)");
+      g_dailyTradeDone = true;
+      return 0;
+   }
+   GlobalVariableSet("ORB_ORDER_LOCK", 1.0);
+
    double ask = SymbolInfoDouble(symbol, SYMBOL_ASK);
    double bid = SymbolInfoDouble(symbol, SYMBOL_BID);
 
@@ -232,6 +245,10 @@ ulong ProcessEntryTick(string symbol,
 
    UpdateLevelAFlags(ask, bid);
 
+   // Оценка слиппажа в валюте для предварительной компенсации SL/TP (v1.9 FIX 4756)
+   // Это минимизирует величину коррекции в OnPositionOpened и избегает ошибки 4756
+   double slipEst = maxSlippage * SymbolInfoDouble(symbol, SYMBOL_POINT);
+
    // === LONG-вход ===
    if(g_levelALong && ask >= longEntry)
    {
@@ -239,14 +256,16 @@ ulong ProcessEntryTick(string symbol,
       if(!CheckDailyLoss(maxDailyLossPercent))
          return 0;
 
-      double sl      = ask - entryOffset;   // SL на фиксированной дистанции от цены входа — сохраняет R:R=12:1
-      double tpPrelim = ask + takeProfit;
+      // SL/TP рассчитаны с учётом ожидаемого слиппажа: при fill выше ask
+      // SL уже близок к корректному значению, коррекция в OnPositionOpened минимальна
+      double sl       = ask - entryOffset + slipEst;
+      double tpPrelim = ask + takeProfit  + slipEst;
 
-      LogInfo(StringFormat("LONG-триггер | Ask=%.2f >= %.2f | SL=%.2f",
-                            ask, longEntry, sl));
+      LogInfo(StringFormat("LONG-триггер | Ask=%.2f >= %.2f | SL=%.2f  SlipEst=%.2f",
+                            ask, longEntry, sl, slipEst));
 
       ulong ticket = SendMarketOrder(symbol, ORDER_TYPE_BUY, lot,
-                                     sl, tpPrelim, entryOffset,   // FIX BUG 3
+                                     sl, tpPrelim, entryOffset,
                                      maxSlippage, retryDelay, magic, etOffset);
       if(ticket > 0)
       {
@@ -265,14 +284,16 @@ ulong ProcessEntryTick(string symbol,
       if(!CheckDailyLoss(maxDailyLossPercent))   // FIX BUG 2
          return 0;
 
-      double sl      = bid + entryOffset;   // SL на фиксированной дистанции от цены входа — сохраняет R:R=12:1
-      double tpPrelim = bid - takeProfit;
+      // SL/TP рассчитаны с учётом ожидаемого слиппажа: при fill ниже bid
+      // SL уже близок к корректному значению, коррекция в OnPositionOpened минимальна
+      double sl       = bid + entryOffset - slipEst;
+      double tpPrelim = bid - takeProfit  - slipEst;
 
-      LogInfo(StringFormat("SHORT-триггер | Bid=%.2f <= %.2f | SL=%.2f",
-                            bid, shortEntry, sl));
+      LogInfo(StringFormat("SHORT-триггер | Bid=%.2f <= %.2f | SL=%.2f  SlipEst=%.2f",
+                            bid, shortEntry, sl, slipEst));
 
       ulong ticket = SendMarketOrder(symbol, ORDER_TYPE_SELL, lot,
-                                     sl, tpPrelim, entryOffset,   // FIX BUG 3
+                                     sl, tpPrelim, entryOffset,
                                      maxSlippage, retryDelay, magic, etOffset);
       if(ticket > 0)
       {
