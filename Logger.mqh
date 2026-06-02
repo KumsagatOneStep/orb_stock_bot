@@ -20,6 +20,11 @@ bool           g_enableEmail = false;
 bool           g_enableSound = true;
 string         g_eaTag       = "TSLA_ORB";
 
+// --- Telegram (v2.0) ---
+bool   g_enableTelegram = false;
+string g_telegramToken  = "";
+string g_telegramChatId = "";
+
 void InitLogger(string eaTag, ENUM_LOG_LEVEL logLevel,
                 bool enablePush, bool enableEmail, bool enableSound)
 {
@@ -28,6 +33,54 @@ void InitLogger(string eaTag, ENUM_LOG_LEVEL logLevel,
    g_enablePush  = enablePush;
    g_enableEmail = enableEmail;
    g_enableSound = enableSound;
+}
+
+void InitTelegram(string token, string chatId)
+{
+   g_enableTelegram = (StringLen(token) > 0 && StringLen(chatId) > 0);
+   g_telegramToken  = token;
+   g_telegramChatId = chatId;
+   if(g_enableTelegram)
+      Print(StringFormat("[%s] Telegram инициализирован | ChatID=%s", g_eaTag, chatId));
+}
+
+string TgEscape(string s)
+{
+   StringReplace(s, "\\", "\\\\");
+   StringReplace(s, "\"", "\\\"");
+   StringReplace(s, "\n", "\\n");
+   StringReplace(s, "\r", "\\r");
+   return s;
+}
+
+bool SendTelegramMessage(string message)
+{
+   if(!g_enableTelegram) return false;
+
+   string url  = "https://api.telegram.org/bot" + g_telegramToken + "/sendMessage";
+   string body = "{\"chat_id\":\"" + g_telegramChatId + "\",\"text\":\"" + TgEscape(message) + "\"}";
+
+   char   post[], result[];
+   string headers = "Content-Type: application/json; charset=utf-8\r\n";
+   string responseHeaders;
+
+   int bodyLen = StringToCharArray(body, post, 0, WHOLE_ARRAY, CP_UTF8) - 1;
+   ArrayResize(post, bodyLen);
+
+   int httpCode = WebRequest("POST", url, headers, 5000, post, result, responseHeaders);
+
+   if(httpCode == -1)
+   {
+      Print(StringFormat("[%s] Telegram: ошибка %d — добавьте api.telegram.org в Tools→Options→Expert Advisors→WebRequest",
+                          g_eaTag, GetLastError()));
+      return false;
+   }
+   if(httpCode != 200)
+   {
+      Print(StringFormat("[%s] Telegram: HTTP %d", g_eaTag, httpCode));
+      return false;
+   }
+   return true;
 }
 
 // FIX BUG 10: переименовано из _Log → LogWrite (избегаем имён с ведущим _)
@@ -64,10 +117,12 @@ void SendEaAlert(string message, bool doPush, bool doEmail, bool doSound)
 {
    if(doPush && g_enablePush)
    {
-      // Вызов MT5 встроенной функции (1 параметр — нет конфликта)
       if(!SendNotification(message))
          LogWrite(LOG_WARNING, "Push не отправлен: " + (string)GetLastError());
    }
+
+   if(doPush && g_enableTelegram)
+      SendTelegramMessage(message);
 
    if(doEmail && g_enableEmail)
    {

@@ -44,6 +44,10 @@ input bool     InpEnablePush          = true;       // Push-уведомлени
 input bool     InpEnableEmail         = false;      // Email-уведомления
 input bool     InpEnableSound         = true;       // Звуковые алерты
 input ENUM_LOG_LEVEL InpLogLevel      = LOG_INFO;   // Уровень детализации лога
+// --- Telegram (v2.0) ---
+input bool     InpEnableTelegram      = false;      // Telegram-уведомления
+input string   InpTelegramToken       = "";         // Bot Token от @BotFather
+input string   InpTelegramChatId      = "";         // Chat ID от @userinfobot
 
 //+------------------------------------------------------------------+
 //|  Внутренние переменные главного модуля                           |
@@ -75,6 +79,8 @@ int OnInit()
 
    //--- 2. Инициализация логгера
    InitLogger("TSLA_ORB", InpLogLevel, InpEnablePush, InpEnableEmail, InpEnableSound);
+   if(InpEnableTelegram)
+      InitTelegram(InpTelegramToken, InpTelegramChatId);
 
    //--- 2a. Символ EA — используется в функциях управления позицией
    g_eaSymbol = InpSymbol;
