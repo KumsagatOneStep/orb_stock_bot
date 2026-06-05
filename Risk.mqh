@@ -161,6 +161,7 @@ void ResetDailyState(int magic)
    GlobalVariableSet("ORB_ENTRY_PRICE",   0.0);
    GlobalVariableSet("ORB_LEVEL_A_LONG",  0.0);   // БАГ 3 FIX
    GlobalVariableSet("ORB_LEVEL_A_SHORT", 0.0);   // БАГ 3 FIX
+   GlobalVariableSet("ORB_ORDER_LOCK",    0.0);   // БАГ 13 FIX: сброс лока при смене дня
    // БАГ 6 FIX: пишем полночь (совпадает с форматом CheckNewDay) для корректного gvIsToday
    MqlDateTime midnightStruct;
    TimeToStruct(TimeTradeServer(), midnightStruct);
