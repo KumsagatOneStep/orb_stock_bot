@@ -380,6 +380,9 @@ void InitRisk(int magic)
          g_levelAShort = (GlobalVariableGet("ORB_LEVEL_A_SHORT") > 0.5);
    }
    // Если GV устарели — все флаги остаются false (default), торговля разрешена
+   // БАГ 13 FIX (часть 2): сбрасываем лок при старте если GV не сегодняшние
+   if(!gvIsToday)
+      GlobalVariableSet("ORB_ORDER_LOCK", 0.0);
 
    // Hedging: ищем позицию по POSITION_MAGIC
    ulong posTicket = GetPositionTicketByMagic(magic);
