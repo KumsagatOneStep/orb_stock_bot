@@ -1,6 +1,6 @@
 //+------------------------------------------------------------------+
 //|                                               TSLA_ORB_v1.mq5   |
-//|           TSLA Pre-Market ORB Level Break EA — v1.9              |
+//|           TSLA Pre-Market ORB Level Break EA — v2.0              |
 //|                                                                  |
 //|  Стратегия: пробой уровней 5M свечи 09:30-09:35 ET         |
 //|  Свеча:     09:30–09:35 ET (13:30–13:35 / 14:30–14:35 UTC)      |
@@ -171,7 +171,7 @@ void OnTick()
       UpdateETOffset();
    }
 
-   //--- 2. Фиксация ORB-уровней в момент закрытия свечи 09:25–09:30 ET
+   //--- 2. Фиксация ORB-уровней в момент закрытия свечи 09:30–09:35 ET
    ProcessLevelTick(InpSymbol, g_etOffset, InpUseDynamicParams, InpBasePrice,
                     InpTradingRatio, InpLeverage, InpUseExternalLevels);
 
@@ -293,7 +293,7 @@ void OnTimer()
    }
    else
    {
-      // БАГ 1 FIX: фиксируем уровни через таймер если тик в минуту 13:30 не пришёл
+      // БАГ 1 FIX: фиксируем уровни через таймер если тик в минуту 13:35 не пришёл
       ProcessLevelTick(InpSymbol, g_etOffset, InpUseDynamicParams,
                        InpBasePrice, InpTradingRatio, InpLeverage, InpUseExternalLevels);
       CheckEntryWindowExpiry(g_etOffset);

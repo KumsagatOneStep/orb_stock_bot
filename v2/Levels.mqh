@@ -46,7 +46,7 @@ double        g_lotSize        = 0.0;           // Лот, рассчитанн�
 //+------------------------------------------------------------------+
 //|  Возвращает серверный час открытия ORB-свечи                     |
 //|                                                                  |
-//|  09:25 ET → UTC: UTC = ET - ETOffset                             |
+//|  09:30 ET → UTC: UTC = ET - ETOffset                             |
 //|  Лето  (ETOffset = -4): UTC_hour = 9 - (-4) = 13                |
 //|  Зима  (ETOffset = -5): UTC_hour = 9 - (-5) = 14                |
 //+------------------------------------------------------------------+
@@ -132,7 +132,7 @@ void CalcOrbLot(string symbol, double orbPrice, double tradingRatio, double leve
 
 //+------------------------------------------------------------------+
 //|  Строит datetime открытия ORB-свечи для сегодняшней даты        |
-//|  Результат: сегодня orbHour:25:00 по серверному времени          |
+//|  Результат: сегодня orbHour:30:00 по серверному времени          |
 //+------------------------------------------------------------------+
 datetime BuildOrbOpenTime(int etOffset)
 {
@@ -145,7 +145,7 @@ datetime BuildOrbOpenTime(int etOffset)
 }
 
 //+------------------------------------------------------------------+
-//|  Ищет в M5-истории свечу с открытием в 09:25 ET за сегодня     |
+//|  Ищет в M5-истории свечу с открытием в 09:30 ET за сегодня     |
 //|  Возвращает индекс бара (>= 1) или -1 если свеча не найдена     |
 //|                                                                  |
 //|  Примечания:                                                     |
@@ -492,14 +492,14 @@ void ProcessLevelTick(string symbol, int etOffset,
 
    if(useExternalLevels)
    {
-      // Начинаем проверять файл только после fixHour:30 (когда EA_DataReader пишет файл)
+      // Начинаем проверять файл только после fixHour:35 (когда EA_DataReader пишет файл)
       if(now.hour < fixHour || (now.hour == fixHour && now.min < 35))
          return;
 
       if(ReadFromFile(symbol, tradingRatio, leverage))
          return;
 
-      // Таймаут: если прошло 5 минут после fixHour:30 — файл так и не появился
+      // Таймаут: если прошло 5 минут после fixHour:35 — файл так и не появился
       bool pastTimeout = (now.hour > fixHour) ||
                          (now.hour == fixHour && now.min >= 40);
       if(pastTimeout)
@@ -515,7 +515,7 @@ void ProcessLevelTick(string symbol, int etOffset,
    }
 
    // Стандартный режим: самостоятельная фиксация из истории M5
-   // Пробуем в минуту 30, и повторно в минуту 31 если свеча ещё не найдена
+   // Пробуем в минуту 35, и повторно в минуту 36 если свеча ещё не найдена
    // (на некоторых брокерах бар появляется в истории с задержкой 200–500мс)
    bool isFixMinute = (now.hour == fixHour) &&
                       (now.min == 35 || (now.min == 36 && !g_levelsFixed));
